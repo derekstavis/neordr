@@ -17,6 +17,10 @@ function M.check()
     return
   end
   health.info('Session: ' .. plugin.session .. '\nNeovim socket: ' .. vim.v.servername)
+  if plugin.bridge_starting then
+    health.warn('Session bridge is starting; check again after editor startup')
+    return
+  end
   if not plugin.job or vim.fn.jobwait({ plugin.job }, 0)[1] ~= -1 then
     health.error('Session bridge job is not running', 'Retry setup with your original options after correcting the error')
   end

@@ -112,12 +112,17 @@ def run_installation(root, method):
 local plugin = require('neordr')
 local backend = require('neordr.backend')
 local notices = {}
-vim.notify = function(message) notices[#notices + 1] = tostring(message) end
+vim.g.neordr_plugin_test_notices = notices
+vim.notify = function(message)
+  notices[#notices + 1] = tostring(message)
+  vim.g.neordr_plugin_test_notices = notices
+end
 local function snapshot()
   return {server=vim.v.servername, backend=backend.session or false,
     generation=vim.g.neordr_generation or false, buffers=vim.api.nvim_list_bufs(),
     autocmds=vim.api.nvim_get_autocmds({}), job=plugin.job or false,
-    timer=plugin.router_timer and true or false, session=vim.env.HERDR_SESSION or false}
+    timer=plugin.router_timer and true or false, pending=plugin.bridge_starting or false,
+    session=vim.env.HERDR_SESSION or false}
 end
 local baseline = snapshot()
 for _, opts in ipairs({
@@ -162,9 +167,9 @@ local ok, err = plugin.setup({bin=@BINARY@, session=@SESSION@})
 assert(ok == true, err)
 assert(plugin.last_error == nil, 'Successful retry did not clear startup failure')
 local job = plugin.job
-assert(type(job) == 'number' and job > 0)
+assert(job == nil and plugin.bridge_starting, 'Bridge must wait until init.lua finishes')
 assert(plugin.setup({bin=@BINARY@, session=@SESSION@}) == true)
-assert(plugin.job == job, 'Repeated setup replaced the running bridge')
+assert(plugin.job == nil and plugin.bridge_starting, 'Repeated setup lost pending bridge startup')
 local original = vim.fn.getcwd()
 vim.fn.mkdir(original .. '/changed-directory')
 vim.cmd.cd(original .. '/changed-directory')
@@ -176,12 +181,22 @@ local configured = snapshot()
 local switched, switch_error = plugin.setup({bin=@BINARY@, session='other-session'})
 assert(switched == false and type(switch_error) == 'string', 'Changing a live session must be rejected')
 assert(vim.deep_equal(snapshot(), configured), 'Rejected session change mutated the running bridge')
-assert(plugin.session == @SESSION@ and vim.fn.jobwait({job}, 0)[1] == -1)
+assert(plugin.session == @SESSION@ and plugin.bridge_starting and plugin.job == nil)
 assert(plugin.setup({bin=@BINARY@}) == true, 'Setup could not recover from rejected session change')
+-- Simulate another plugin's synchronous initialization after Neordr setup.
+-- This exceeds the bridge's ordinary 500ms editor RPC deadline.
+vim.uv.sleep(1000)
 vim.fn.serverstart(@ADDRESS@)
-vim.fn.writefile({vim.json.encode({job=job, notices=notices,
-  session=plugin.session, version=require('neordr.version'),
-  continued=vim.g.plugin_init_continued})}, @REPORT@)
+vim.api.nvim_create_autocmd('VimEnter', {once=true, callback=function()
+  vim.schedule(function()
+    local started = plugin.job
+    assert(type(started) == 'number' and started > 0 and not plugin.bridge_starting,
+      'Bridge did not launch after VimEnter')
+    vim.fn.writefile({vim.json.encode({job=started, notices=notices,
+      session=plugin.session, version=require('neordr.version'),
+      continued=vim.g.plugin_init_continued})}, @REPORT@)
+  end)
+end})
 '''.replace('@FAILURES@', '{' + ','.join(json.dumps(str(path)) for path in (missing, nonexecutable, wrong, slow)) + '}')
        .replace('@SESSION@', json.dumps(session))
        .replace('@BINARY@', json.dumps(str(BIN)))
@@ -208,6 +223,14 @@ vim.fn.writefile({vim.json.encode({job=job, notices=notices,
                 return True
             eventually(ping_router)
             eventually(lambda: rpc(endpoint, 'ping'))
+            live = json.loads(lua(env, address,
+                "local p=require('neordr'); local job=p.job; local session=p.session; "
+                "local ok, err=p.setup({bin=" + json.dumps(str(BIN)) +
+                ",session='other-session'}); assert(ok == false and err); "
+                "assert(p.job == job and p.session == session and vim.fn.jobwait({job}, 0)[1] == -1); "
+                "assert(p.setup({bin=" + json.dumps(str(BIN)) + "})); "
+                "return vim.json.encode({job=p.job, session=p.session})"))
+            assert live == {'job': startup['job'], 'session': session}, live
             check_ping_failures(root, env, address)
 
             captured = root / 'terminal-env.json'
@@ -277,7 +300,22 @@ vim.fn.writefile({vim.json.encode({job=job, notices=notices,
             assert editor.wait(timeout=10) == 0
             eventually(lambda: not endpoint.exists())
         except Exception as error:
+            diagnostics = {'editor_exit': editor.poll() if editor is not None else None}
+            if report.exists():
+                diagnostics['startup_report'] = json.loads(report.read_text())
+            if address.exists():
+                try:
+                    diagnostics['plugin'] = json.loads(lua(env, address,
+                        "local p=require('neordr'); return vim.json.encode({"
+                        "last_error=p.last_error or false, job=p.job or false, "
+                        "job_state=p.job and vim.fn.jobwait({p.job}, 0)[1] or false, "
+                        "servername=vim.v.servername, session=p.session or false, "
+                        "router_log=p.router_log or false, router_starting=p.router_starting, "
+                        "notices=vim.g.neordr_plugin_test_notices or {}})"))
+                except Exception as diagnostic_error:
+                    diagnostics['snapshot_error'] = str(diagnostic_error)
             raise AssertionError(f'{method} plugin installation failed: {error}\n'
+                                 + json.dumps(diagnostics, indent=2) + '\n'
                                  + (root / 'startup.log').read_text()) from error
         finally:
             if editor is not None and editor.poll() is None:

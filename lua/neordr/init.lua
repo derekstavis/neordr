@@ -23,7 +23,9 @@ end
 
 local function commands()
   vim.api.nvim_create_user_command('NeordrTerm', function(ev)
-    if not running() then notify('Session bridge is not running. Call setup() after fixing the startup error'); return end
+    if not running() and not M.bridge_starting then
+      notify('Session bridge is not running. Call setup() after fixing the startup error'); return
+    end
     vim.cmd('botright new')
     local env = M.prepare(vim.api.nvim_get_current_buf())
     local cmd = #ev.fargs > 0 and ev.fargs or { vim.o.shell }
@@ -39,7 +41,7 @@ local function commands()
     local lines = { 'Neordr Lua ' .. require('neordr.version'),
       'Session: ' .. (M.session or 'not configured'),
       'Binary: ' .. (M.bin or 'not configured'),
-      'Bridge job: ' .. (running() and 'running' or 'stopped'),
+      'Bridge job: ' .. (running() and 'running' or M.bridge_starting and 'starting' or 'stopped'),
       'Neovim socket: ' .. (vim.v.servername ~= '' and vim.v.servername or 'not started') }
     if M.last_error then lines[#lines + 1] = 'Last error: ' .. M.last_error end
     lines[#lines + 1] = 'Run :checkhealth neordr to verify connections.'
@@ -80,8 +82,9 @@ local function start(opts, bin, session, generation)
     })
     if not spawned or job <= 0 then
       M.router_starting = false
-      M.router_log = 'Cannot start router process: ' .. tostring(job)
-      notify(M.router_log)
+      local message = 'Cannot start router process: ' .. tostring(job)
+      if M.router_log ~= message then notify(message) end
+      M.router_log = message
     end
   end
   ensure_router()
@@ -94,21 +97,35 @@ local function start(opts, bin, session, generation)
     if M.router_timer then M.router_timer:stop(); M.router_timer:close(); M.router_timer = nil end
     if M.job then vim.fn.jobstop(M.job) end
   end })
-  if running() then return true end
-  local stderr = {}
-  local job = vim.fn.jobstart({ bin, '--session', session, 'serve', '--nvim', vim.v.servername }, {
-    detach = true,
-    on_stderr = function(_, lines) for _, line in ipairs(lines) do if line ~= '' then table.insert(stderr, line) end end end,
-    on_exit = function(id, code)
-      if M.job == id then M.job = nil end
-      if code ~= 0 and not vim.g.neordr_exiting then
-        local detail = table.concat(stderr, '\n')
-        fail('Session bridge exited with code ' .. code .. (detail ~= '' and ': ' .. detail or ''))
-      end
-    end,
-  })
-  if job <= 0 then return fail('Cannot start session bridge (jobstart returned ' .. job .. ')') end
-  M.job = job
+  if running() or M.bridge_starting then return true end
+  M.bridge_starting = true
+  local function launch_bridge()
+    M.bridge_starting = false
+    if vim.g.neordr_exiting then return end
+    local stderr = {}
+    local spawned, job = pcall(vim.fn.jobstart, { bin, '--session', session, 'serve', '--nvim', vim.v.servername }, {
+      detach = true,
+      on_stderr = function(_, lines) for _, line in ipairs(lines) do if line ~= '' then table.insert(stderr, line) end end end,
+      on_exit = function(id, code)
+        if M.job == id then M.job = nil end
+        if code ~= 0 and not vim.g.neordr_exiting then
+          local detail = table.concat(stderr, '\n')
+          fail('Session bridge exited with code ' .. code .. (detail ~= '' and ': ' .. detail or ''))
+        end
+      end,
+    })
+    if not spawned or job <= 0 then fail('Cannot start session bridge: ' .. tostring(job)); return end
+    M.job = job
+  end
+  -- The bridge's initial RPC has a bounded timeout. Starting it inside init.lua
+  -- races the rest of the user's configuration, which can occupy Neovim longer
+  -- than that timeout. Configure terminal identity now, connect after VimEnter.
+  if vim.v.vim_did_enter == 0 then
+    vim.api.nvim_create_autocmd('VimEnter', {
+      group = vim.api.nvim_create_augroup('NeordrStartup', { clear = true }),
+      once = true, callback = function() vim.schedule(launch_bridge) end,
+    })
+  else vim.schedule(launch_bridge) end
   return true
 end
 
@@ -129,7 +146,9 @@ function M.setup(opts)
   if backend.session and backend.session ~= session then
     return fail('This editor is already registered as ' .. backend.session .. '. Restart Neovim to change session')
   end
-  if running() and M.bin ~= validated.bin then return fail('Restart Neovim to change the binary of a running bridge') end
+  if (running() or M.bridge_starting) and M.bin ~= validated.bin then
+    return fail('Restart Neovim to change the binary of a running bridge')
+  end
   local root, root_error = diagnostics.config_root()
   if not root then return fail(root_error) end
   local endpoint = root .. '/herdr/sessions/' .. session .. '/herdr-client.sock'

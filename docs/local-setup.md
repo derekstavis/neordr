@@ -186,6 +186,10 @@ acknowledges. Neovim owns the UI, so Herdr UI settings have no renderer to updat
 
 ## Router and socket lifecycle
 
+Setup configures terminal identity immediately; the editor bridge connects
+after `VimEnter` so the rest of `init.lua` can finish before its first RPC.
+Setup called after startup schedules the connection on the next event-loop turn.
+
 The shared router runs independently of the editor that started it. Every
 integrated editor checks its health every five seconds and restarts it if
 needed. `neordr router --background` also ensures it is running and returns when

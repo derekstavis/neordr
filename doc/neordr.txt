@@ -76,7 +76,9 @@ require('neordr').setup({opts})
 
     Returns true on successful initialization, or false, error_message on
     failure. A failed setup reports the problem without aborting the remaining
-    editor configuration. Bridge startup is asynchronous; use
+    editor configuration. Terminal identity is configured immediately, but
+    the bridge connects after VimEnter so lengthy init.lua files cannot race
+    its initial RPC timeout. Bridge startup is asynchronous; use
     |:checkhealth-neordr| to inspect readiness.
 
     Call setup during startup. Retry with the same session after correcting a
