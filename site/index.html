@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102821">
+  <meta name="description" content="Keep your editor, terminals, and agents in Neovim. Neordr connects them to Moshi and Herdr, so you can pick up the same session from another device.">
+  <meta property="og:title" content="Neordr — your Neovim, within reach">
+  <meta property="og:description" content="A small Rust bridge between Neovim, Moshi, and Herdr. Your full editor. Your running agents. The same session.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://derekstavis.github.io/neordr/">
+  <title>Neordr — your Neovim, within reach</title>
+  <link rel="icon" type="image/svg+xml" href="assets/neordr-mark.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="header wrap">
+    <a class="brand" href="./" aria-label="Neordr home"><img src="assets/neordr-wordmark.svg" alt="Neordr" width="163" height="40"></a>
+    <nav aria-label="Main navigation"><a href="#how">How it works</a><a href="#start">Get started</a><a class="source-link" href="https://github.com/derekstavis/neordr">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> NEOVIM, CONNECTED</p>
+        <h1 id="hero-title">Your Neovim.<br>Within <em>reach.</em></h1>
+        <p class="lede">Keep your editor, terminals, and agents together. Pick up the same session in Moshi or Herdr, wherever you work.</p>
+        <div class="hero-actions"><a class="button primary" href="#start">Connect your editor <span aria-hidden="true">↗</span></a><a class="text-link" href="#how">See how it works <span aria-hidden="true">↓</span></a></div>
+        <p class="hero-note">A small Rust bridge. A full Neovim session.</p>
+      </div>
+      <div class="hero-aside" aria-hidden="true"><span>01 / SAME EDITOR</span><svg viewBox="0 0 180 160" fill="none"><path d="M22 125V36h40l56 68V36h40v89h-40L62 57v68H22Z" stroke="currentColor" stroke-width="1.5"/><path d="M62 36v21m56 47v21M22 81h40m56 0h40" stroke="currentColor" stroke-width="1.5"/><rect x="82" y="36" width="15" height="15" fill="currentColor"/><rect x="82" y="110" width="15" height="15" fill="currentColor"/></svg><span>ANYWHERE YOU ATTACH</span></div>
+    </section>
+
+    <section class="demo wrap" aria-label="Illustration of a connected Neovim workspace">
+      <div class="demo-heading"><span><span class="status-dot" aria-hidden="true"></span> ONE RUNNING SESSION</span><span>EDITOR + TERMINALS + AGENTS</span></div>
+      <div class="workspace">
+        <aside class="workspace-nav" aria-label="Illustrative workspace sidebar">
+          <div class="workspace-label"><span class="mini-mark" aria-hidden="true">N</span> field-notes <span class="small-dot"></span></div>
+          <p class="sidebar-caption">TERMINALS</p>
+          <div class="terminal-choice selected"><span aria-hidden="true">›_</span> build <small>01</small></div>
+          <div class="terminal-choice"><span aria-hidden="true">✳</span> claude <small>02</small></div>
+          <div class="terminal-choice"><span aria-hidden="true">◇</span> codex <small>03</small></div>
+          <div class="sidebar-bottom"><span class="small-dot"></span> Neovim is still running</div>
+        </aside>
+        <div class="editor">
+          <div class="editor-tabs"><span class="active-file">◈ &nbsp; main.rs</span><span>README.md</span><span class="editor-path">src /</span></div>
+          <div class="code" aria-label="Illustrative Rust code"><div><span class="line-number">1</span><span class="code-muted">// The same place you left off.</span></div><div><span class="line-number">2</span></div><div><span class="line-number">3</span><span class="code-purple">fn</span> <span class="code-gold">main</span>() {</div><div><span class="line-number">4</span>    <span class="code-purple">let</span> workspace = <span class="code-mint">"field-notes"</span>;</div><div><span class="line-number">5</span>    <span class="code-gold">println!</span>(<span class="code-mint">"Right where I left it: {workspace}"</span>);</div><div><span class="line-number">6</span>}<span class="cursor" aria-hidden="true"></span></div><div><span class="line-number">7</span></div></div>
+          <div class="editor-status"><span>NORMAL</span><span>main &nbsp; / &nbsp; src/main.rs</span><span>rust &nbsp; 6:2</span></div>
+          <div class="terminal-output"><p><span class="code-mint">❯</span> cargo run</p><p><span class="code-mint">&nbsp; Finished</span> dev profile</p><p>Right where I left it: field-notes</p><p><span class="code-mint">❯</span> <span class="terminal-cursor" aria-hidden="true"></span></p></div>
+        </div>
+      </div>
+      <div class="connection-strip"><span class="connection-label">ATTACH THROUGH</span><span class="connection"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>Moshi desktop &amp; web</span><span class="connection"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg>Moshi mobile</span><span class="connection"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m6 9 3 3-3 3m6 0h5"/></svg>Herdr</span></div>
+      <p class="caption">Illustrated workspace. Neovim owns the editor and terminal jobs; each remote connection attaches a UI.</p>
+    </section>
+
+    <section class="features wrap" aria-labelledby="features-title">
+      <div class="section-intro"><p class="eyebrow">KEEP YOUR WORKFLOW</p><h2 id="features-title">A bridge, with<br>a light touch.</h2><p>Your configuration, keymaps, plugins, and running jobs stay in Neovim. Neordr gives your other tools a way in.</p></div>
+      <div class="feature-list">
+        <article><span class="feature-number">01</span><div><h3>The whole editor comes with you.</h3><p>Edit files and run terminals in the same view. Select a terminal in the sidebar to focus it, ready for input. Create, rename, split, and reorder without leaving the client.</p></div></article>
+        <article><span class="feature-number">02</span><div><h3>Your agents, in Chat View.</h3><p>Run Claude or Codex inside a managed Neovim terminal. Moshi’s existing hooks find the agent and read its conversation. Send a message from Chat View and continue in the same job.</p></div></article>
+        <article><span class="feature-number">03</span><div><h3>Leave the connection. Keep the work.</h3><p>Discover running editor sessions and attach through Neovim’s remote UI. Detach a client while your editor and terminal jobs keep running.</p></div></article>
+      </div>
+    </section>
+
+    <section class="how" id="how" aria-labelledby="how-title"><div class="wrap">
+      <div class="how-header"><p class="eyebrow">SMALL PIECES, CLEAR OWNERSHIP</p><h2 id="how-title">Neovim at the center.</h2><p>Neordr speaks the Herdr interfaces that Moshi already uses. Neither Moshi nor moshi-hook needs a patch.</p></div>
+      <div class="architecture" aria-label="Moshi and Herdr connect through Neordr to Neovim">
+        <div class="architecture-clients"><div>Moshi <small>Term + Chat View</small></div><div>Herdr <small>Interactive interface</small></div></div><span class="architecture-arrow" aria-hidden="true">↔</span><div class="architecture-bridge"><img src="assets/neordr-mark.svg" width="42" height="42" alt=""><strong>Neordr</strong><small>CLI + local bridge</small></div><span class="architecture-arrow" aria-hidden="true">↔</span><div class="architecture-editor"><strong>Neovim</strong><small>Editor · terminals · agents</small></div>
+      </div>
+      <div class="how-notes"><p><strong>One source of truth.</strong> Herdr’s complete contract types come from a pinned upstream source revision. Neordr implements the operations needed for its Neovim bridge.</p><p><strong>Shared by design.</strong> Attached clients share editor focus and layout. Neovim renders at the smallest attached UI size; detach unused connections to release that constraint.</p></div>
+    </div></section>
+
+    <section class="start wrap" id="start" aria-labelledby="start-title">
+      <div class="start-copy"><p class="eyebrow">GET CONNECTED</p><h2 id="start-title">Bring your<br>own Neovim.</h2><p>Neordr runs beside your editor. Install the CLI and Lua integration, then connect using the Herdr option in Moshi.</p><div class="platforms"><span>macOS</span><span>Linux</span><span>ARM64 + x86-64</span></div><p class="requirements">Requires Neovim 0.12+ with remote UI support.<br>Herdr and Moshi are installed separately.</p><a class="text-link" href="https://github.com/derekstavis/neordr/releases">Release binaries <span aria-hidden="true">↗</span></a></div>
+      <div class="setup"><div class="setup-header"><span>QUICK START</span><span>01—03</span></div><ol><li><h3>Install Neordr</h3><p>Download the archive for your host. It includes the executable and Neovim Lua integration.</p><a href="https://github.com/derekstavis/neordr/blob/main/docs/installation.md">Installation instructions <span aria-hidden="true">↗</span></a></li><li><h3>Enable it in Neovim</h3><p>Add the bundled Lua integration to your runtimepath, then call:</p><pre><code>require('neordr').setup()</code></pre></li><li><h3>Start a managed terminal</h3><p>Run <code>:NeordrTerm</code>, launch your agent, and select the session in Moshi’s Herdr picker.</p></li></ol></div>
+      <div class="preview-note"><strong>Private preview.</strong> The source, installation guide, and release downloads currently require repository access. This website does not grant access. Neordr is an independent project; it is not affiliated with Neovim, Moshi, or Herdr.</div>
+    </section>
+  </main>
+  <footer class="footer wrap"><a class="brand" href="./"><img src="assets/neordr-wordmark.svg" alt="Neordr" width="130" height="32"></a><p>Your editor. Still yours.</p><a href="https://github.com/derekstavis/neordr">Source &amp; documentation <span aria-hidden="true">↗</span></a></footer>
+</body>
+</html>

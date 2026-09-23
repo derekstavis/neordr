@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Neordr</title>
+  <rect width="64" height="64" rx="14" fill="#102821"/>
+  <path d="M14 48V16h10l16 20V16h10v32H40L24 28v20Z" fill="#A6EDBD"/>
+  <path d="M28 16h7v7h-7zM29 41h7v7h-7z" fill="#F5F2E9"/>
+</svg>

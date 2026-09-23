@@ -1,0 +1,28 @@
+[package]
+name = "neordr"
+version = "0.1.0"
+edition = "2024"
+description = "Expose Neovim sessions through Herdr-compatible interfaces"
+repository = "https://github.com/derekstavis/neordr"
+publish = false
+
+[dependencies]
+anyhow = "1"
+bincode = { version = "2", features = ["serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+ctrlc = { version = "3", features = ["termination"] }
+libc = "0.2"
+rmpv = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+schemars = { version = "1.2.1", features = ["derive"] }
+toml = { version = "0.9", default-features = false, features = ["parse", "std", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+syn = { version = "2", features = ["full", "visit-mut"] }
+quote = "1"
+prettyplease = "0.2"

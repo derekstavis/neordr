@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (must match Cargo.toml)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      TARGET: ${{ matrix.target }}
+      CARGO_TERM_COLOR: always
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          submodules: true
+          persist-credentials: false
+      - name: Validate release tag and reviewed branch
+        run: |
+          python3 scripts/package-release.py --tag "$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor HEAD origin/main
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustup target add "$TARGET"
+      - name: Install pinned Neovim
+        run: python3 scripts/install-ci-neovim.py
+      - name: Test contracts and Neovim integration
+        run: cargo test --locked --all-targets -- --test-threads=2
+      - name: Build release binary
+        run: |
+          cargo build --release --locked --target "$TARGET"
+          "target/$TARGET/release/neordr" --version
+          NEORDR_BIN="$PWD/target/$TARGET/release/neordr" python3 tests/remote_ui_smoke.py
+      - name: Package binary, Neovim plugin, docs and licenses
+        run: python3 scripts/package-release.py --tag "$RELEASE_TAG" --target "$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  draft:
+    name: Assemble draft release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Check all four archives
+        run: |
+          cd dist
+          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
+          cat ./*.sha256 | sort -k2 > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Create reviewable draft
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > draft-state; then
+            test "$(cat draft-state)" = true || { echo 'Refusing to replace a published release'; exit 1; }
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Neordr $RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS --clobber

@@ -1,0 +1,3 @@
+[submodule "vendor/herdr"]
+	path = vendor/herdr
+	url = https://github.com/herdrdev/herdr.git

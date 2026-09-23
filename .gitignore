@@ -1,0 +1,6 @@
+/target/
+/bin/herdr
+__pycache__/
+/dist/
+/nvim.log
+.DS_Store
