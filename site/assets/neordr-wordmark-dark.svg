@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="64" viewBox="0 0 260 64" role="img" aria-labelledby="title">
+  <title id="title">Neordr</title>
+  <rect width="64" height="64" rx="14" fill="#102821"/>
+  <path d="M14 48V16h10l16 20V16h10v32H40L24 28v20Z" fill="#A6EDBD"/>
+  <path d="M28 16h7v7h-7zM29 41h7v7h-7z" fill="#F5F2E9"/>
+  <g fill="#F5F2E9" transform="translate(82 18)">
+    <path d="M0 28V0h5l14 20V0h5v28h-5L5 8v20Z"/>
+    <path d="M31 18c0-7 4-11 10-11s10 4 10 11v2H36c.5 3 2.5 5 6 5 2 0 4-1 6-2l2 3c-2 2-5 3-8 3-7 0-11-4-11-11Zm5-2h10c-.5-3-2-5-5-5s-4.5 2-5 5Z"/>
+    <path fill-rule="evenodd" d="M67 7c7 0 11 4 11 11s-4 11-11 11-11-4-11-11S60 7 67 7Zm0 4c-4 0-6 3-6 7s2 7 6 7 6-3 6-7-2-7-6-7Z"/>
+    <path d="M84 28V8h5v3c2-3 5-4 8-4v5c-5-1-8 2-8 6v10Z"/>
+    <path fill-rule="evenodd" d="M116 0h5v28h-5v-2c-2 2-4 3-7 3-6 0-10-4-10-11s4-11 10-11c3 0 5 1 7 3V0Zm-6 11c-4 0-6 3-6 7s2 7 6 7 6-3 6-7-2-7-6-7Z"/>
+    <path d="M129 28V8h5v3c2-3 5-4 8-4v5c-5-1-8 2-8 6v10Z"/>
+  </g>
+</svg>

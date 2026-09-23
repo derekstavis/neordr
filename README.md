@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="site/assets/neordr-wordmark.svg" alt="Neordr" width="360">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/neordr-wordmark-dark.svg">
+    <img src="site/assets/neordr-wordmark.svg" alt="Neordr" width="360">
+  </picture>
 </p>
 
 <p align="center"><strong>Your editor. Your terminals. Wherever you connect.</strong></p>

@@ -49,7 +49,8 @@ def main():
         shutil.copytree(ROOT / "docs", package / "docs")
         shutil.copy2(ROOT / "README.md", package / "README.md")
         shutil.copy2(ROOT / "Cargo.lock", package / "Cargo.lock")
-        for filename in ("CONTRIBUTING.md", "build_support/README.md", "site/assets/neordr-wordmark.svg"):
+        shutil.copytree(ROOT / "site/assets", package / "site/assets")
+        for filename in ("CONTRIBUTING.md", "build_support/README.md"):
             source = ROOT / filename
             if source.exists():
                 (package / filename).parent.mkdir(parents=True, exist_ok=True)

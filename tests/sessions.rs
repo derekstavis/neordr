@@ -860,12 +860,18 @@ fn modal_prompt_keeps_sessions_and_workspaces_visible_without_dismissing_it() {
     let _bridge = fixture.bridge();
     let terminal = fixture.terminal("claude");
     let before = fixture.rpc("workspace.list", json!({}));
-    // A UI error creates the same hit-enter prompt seen in the live editors.
+    // Attach is deferred but nvim_input is a fast RPC. Wait for both the attach
+    // reply and the initial redraw before injecting input, so the command cannot
+    // run while Neovim still considers this editor headless.
     let mut modal = UnixStream::connect(&fixture.socket).unwrap();
+    modal
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     rmpv::encode::write_value(
         &mut modal,
         &rmpv::Value::Array(vec![
-            2.into(),
+            0.into(),
+            1.into(),
             "nvim_ui_attach".into(),
             rmpv::Value::Array(vec![
                 80.into(),
@@ -875,15 +881,55 @@ fn modal_prompt_keeps_sessions_and_workspaces_visible_without_dismissing_it() {
         ]),
     )
     .unwrap();
+    let (mut attached, mut flushed) = (false, false);
+    while !attached || !flushed {
+        let message = rmpv::decode::read_value(&mut modal).unwrap();
+        let fields = message.as_array().unwrap();
+        if fields[0].as_u64() == Some(1) {
+            assert_eq!(fields[1].as_u64(), Some(1));
+            assert!(fields[2].is_nil(), "UI attachment failed: {}", fields[2]);
+            attached = true;
+        } else if fields[0].as_u64() == Some(2) && fields[1].as_str() == Some("redraw") {
+            flushed |= fields[2]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event.as_array().unwrap()[0].as_str() == Some("flush"));
+        }
+    }
+    assert_eq!(
+        nvim::read_lua(
+            &fixture.socket,
+            "return vim.api.nvim_get_mode().mode",
+            vec![],
+        )
+        .unwrap()
+        .as_str(),
+        Some("n"),
+        "modal fixture must start in normal mode"
+    );
+    // A UI error creates the same hit-enter prompt seen in the live editors.
+    let input = ":lua error('NEORDR_MODAL_TEST')\r";
     rmpv::encode::write_value(
         &mut modal,
         &rmpv::Value::Array(vec![
+            0.into(),
             2.into(),
             "nvim_input".into(),
-            rmpv::Value::Array(vec![":lua error('NEORDR_MODAL_TEST')\r".into()]),
+            rmpv::Value::Array(vec![input.into()]),
         ]),
     )
     .unwrap();
+    loop {
+        let message = rmpv::decode::read_value(&mut modal).unwrap();
+        let fields = message.as_array().unwrap();
+        if fields[0].as_u64() == Some(1) {
+            assert_eq!(fields[1].as_u64(), Some(2));
+            assert!(fields[2].is_nil(), "modal input failed: {}", fields[2]);
+            assert_eq!(fields[3].as_u64(), Some(input.len() as u64));
+            break;
+        }
+    }
     let blocked = || {
         nvim::read_lua(
             &fixture.socket,
@@ -895,6 +941,14 @@ fn modal_prompt_keeps_sessions_and_workspaces_visible_without_dismissing_it() {
             == Some(true)
     };
     wait_for(blocked);
+    assert!(
+        nvim::read_lua(&fixture.socket, "return vim.v.errmsg", vec![])
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("NEORDR_MODAL_TEST"),
+        "the requested error must be the source of the hit-enter prompt"
+    );
     assert_eq!(fixture.listed()["sessions"].as_array().unwrap().len(), 1);
     assert_eq!(
         nvim::discover(std::slice::from_ref(&fixture.socket)).len(),
