@@ -120,8 +120,12 @@ def main():
             eventually(lambda: evaluate('return vim.api.nvim_get_current_win()') != source)
             send(b'\x02\x1b[Z')
             eventually(lambda: evaluate('return vim.api.nvim_get_current_win()') == source)
-            # Workspace swipe opens navigator, moves, confirms (also fragmented).
-            send(b'\x02w'); time.sleep(.06); send(b'\x1b'); time.sleep(.03); send(b'[B\r')
+            # Wait for the navigator, then send the complete arrow sequence.
+            # Decoder unit tests cover every read boundary deterministically;
+            # a scheduled sleep can exceed the lone-Escape timeout on CI.
+            send(b'\x02w')
+            eventually(lambda: evaluate("return require('neordr.backend').navigator ~= nil") == 'true')
+            send(b'\x1b[B\r')
             eventually(lambda: rpc(endpoint, 'workspace.list')['workspaces'][1]['focused'])
             send(b'\x02w\x1b[A\r')
             eventually(lambda: rpc(endpoint, 'workspace.list')['workspaces'][0]['focused'])

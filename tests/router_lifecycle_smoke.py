@@ -10,14 +10,16 @@ from moshi_smoke import BIN, ROOT, eventually, lua, rpc
 
 
 def main():
-    with tempfile.TemporaryDirectory(prefix='neordr-lifecycle-', dir='/tmp') as directory:
+    # Auto-generated session names are part of two Unix socket paths. Keep the
+    # fixture root/config and project basename short enough for macOS SUN_LEN.
+    with tempfile.TemporaryDirectory(prefix='nl-', dir='/tmp') as directory:
         root = Path(directory).resolve()
-        env = {**os.environ, 'XDG_CONFIG_HOME': str(root / 'config'),
+        env = {**os.environ, 'XDG_CONFIG_HOME': str(root / 'c'),
                'NVIM_LOG_FILE': str(root / 'nvim.log')}
         for key in ['NVIM', 'HERDR_SESSION', 'HERDR_ENV', 'HERDR_PANE_ID']:
             env.pop(key, None)
         address = root / 'nvim.sock'
-        router = root / 'config/herdr/herdr.sock'
+        router = root / 'c/herdr/herdr.sock'
         editor = None
         router_pids = set()
         log = open(root / 'startup.log', 'w')
@@ -31,21 +33,28 @@ def main():
         def start():
             nonlocal editor
             process = subprocess.Popen(['nvim', '--headless', '-u', 'NONE', '-i', 'NONE',
-                '--listen', str(address)], env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+                '--listen', str(address)], cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             editor = process
             eventually(lambda: address.exists())
-            lua(env, address, f"vim.opt.runtimepath:prepend({json.dumps(str(ROOT))}); "
-                f"require('neordr').setup({{bin={json.dumps(str(BIN))}}}); return true")
+            session = lua(env, address, f"vim.opt.runtimepath:prepend({json.dumps(str(ROOT))}); "
+                f"require('neordr').setup({{bin={json.dumps(str(BIN))}}}); return require('neordr').session")
             eventually(ping)
+            endpoint = root / 'c/herdr/sessions' / session / 'herdr.sock'
+            try:
+                eventually(lambda: rpc(endpoint, 'ping'))
+            except AssertionError as error:
+                raise AssertionError((str(error), (root/'startup.log').read_text())) from error
             return process
 
         try:
             editor = start()
             initial_pid = ping()
-            assert lua(env, address, "local old=require('neordr'); local job=old.job; "
+            reload = json.loads(lua(env, address, "local old=require('neordr'); local job=old.job; "
                 f"local updated=assert(loadfile({json.dumps(str(ROOT / 'lua/neordr/init.lua'))}))(); "
                 f"updated.setup({{bin={json.dumps(str(BIN))}}}); "
-                "return updated==old and updated.job==job and updated.router_timer:is_active()") == 'true'
+                "return vim.json.encode({same_module=updated==old, before_job=job or false, "
+                "after_job=updated.job or false, timer_active=updated.router_timer:is_active()})"))
+            assert reload['same_module'] and reload['before_job'] and reload['before_job'] == reload['after_job'] and reload['timer_active'], (reload, (root/'startup.log').read_text())
             lua(env, address, "vim.schedule(function() vim.cmd('qa!') end); return true")
             assert editor.wait(timeout=5) == 0
             eventually(lambda: not address.exists())
