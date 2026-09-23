@@ -11,7 +11,7 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets -- --test-threads=2
 cargo build --locked --bin neordr --example herdr_contract_fixture
 export NEORDR_BIN="$PWD/target/debug/neordr"
-for test in remote_ui default_attach gestures router_lifecycle; do
+for test in plugin remote_ui default_attach gestures router_lifecycle; do
     python3 "tests/${test}_smoke.py"
 done
 NEORDR_SKIP_MOSHI=1 python3 tests/split_smoke.py

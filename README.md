@@ -47,12 +47,25 @@ Install the binary **and its Lua integration** using the
 macOS on both x86-64 and AArch64. Neordr requires Neovim 0.12 or newer; the
 verified Neovim version is **0.12.5**.
 
-For the release layout installed under `~/.local`, add this to `init.lua`:
+Install the Lua plugin through your plugin manager. For Neovim's `vim.pack`:
 
 ```lua
-vim.opt.runtimepath:prepend(vim.fn.expand('~/.local/share/neordr'))
-require('neordr').setup({ bin = vim.fn.expand('~/.local/bin/neordr') })
+vim.pack.add({
+  { src = 'git@github.com:derekstavis/neordr.git', version = 'main' },
+})
+require('neordr').setup()
 ```
+
+The executable must already be on `PATH`. This example follows the development
+branch; the new health checks and help documentation are not in `v0.1.0`.
+For a released installation, pin the plugin and binary to the same release.
+See [plugin installation](docs/installation.md#install-the-neovim-plugin) for
+`lazy.nvim`, release pins, and archive-only installation. No Rust build is needed
+when installing the plugin alongside a downloaded binary.
+
+Run `:checkhealth neordr` to diagnose setup and `:help neordr` for configuration
+and terminal adapters. Setup reports failures without stopping your other
+Neovim configuration; it does not download executables.
 
 Restart Neovim, run `:NeordrTerm`, and start `claude`, `codex`, or your usual
 shell command. In another terminal:

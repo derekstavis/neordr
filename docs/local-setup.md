@@ -38,6 +38,26 @@ neordr --session SESSION_NAME rpc pane.list
 Discovery validates live Neovim RPC sockets. Only editors with active bridges
 appear in the Herdr session list. `:NeordrStatus` shows the current name and socket.
 
+## Plugin diagnostics
+
+With the development plugin, run `:checkhealth neordr` to check the supported
+Neovim version, executable and version, setup state, bridge job, router, and
+session readiness. Checks do not restart running services or alter terminal
+jobs. Run `:NeordrStatus` for a compact view of the current session, socket,
+executable, bridge process state, and last error; it does not probe connections.
+Use `:help neordr` for the complete Lua API. These additions are newer than
+`v0.1.0`.
+
+`require('neordr').setup(opts)` returns `true` when initialization succeeds, or
+`false, error_message` when it fails. Startup failure is reported without
+aborting the rest of your editor configuration. Fix the reported path, version,
+or configuration issue, then retry `setup` with the same session options.
+Repeated setup with the same session and executable reuses a running bridge.
+Changing an initialized session or the executable path of a running bridge
+requires an editor restart. Successful setup starts the bridge asynchronously;
+check health again if it is still starting. Initialize before launching terminal jobs so they receive the
+correct agent identity.
+
 ## Remote shortcuts and gestures
 
 Remote attachments interpret Herdr's default prefix, **Ctrl-B**. Local Neovim
@@ -115,12 +135,12 @@ local env = neordr.prepare(buf, { MY_VARIABLE = 'value' })
 vim.fn.jobstart({ vim.o.shell }, { term = true, env = env })
 ```
 
-Call `setup` once with the callbacks your plugin implements:
+Configure `setup` with the callbacks your plugin implements:
 
 | Option | Contract |
 | --- | --- |
 | `bin` | Neordr executable path; defaults to `exepath('neordr')`. |
-| `session` | Optional explicit session name; defaults to a generated per-editor name. |
+| `session` | Optional explicit session name: 1–64 ASCII letters, digits, hyphens, or underscores; `default` is reserved. Defaults to a generated per-editor name. |
 | `focus_terminal(buf)` | Restore/focus the plugin's terminal panel; return true when handled. |
 | `label_terminal(buf)` | Return the plugin's display label for the buffer. |
 | `create_terminal(opts)` | Create and return a new terminal buffer. Apply `cwd`, `env`, and `label`; call `prepare` before starting its job. |
@@ -181,6 +201,8 @@ An editor at a modal “Press ENTER” prompt stays discoverable. Lists retain i
 last normal snapshot without dismissing the prompt. Focus and other mutations
 wait for normal Neovim input processing; input can still dismiss the prompt.
 
-After upgrading the binary or Lua integration, reconnect remote views and reload
-or restart the integration in each editor so running bridges use the new code.
-Replacing the executable does not replace an already running process.
+After upgrading the binary or Lua integration, restart each editor when its
+files are saved and terminal jobs can be stopped, then reconnect remote views.
+Replacing the executable or repeating `setup()` does not replace a running
+bridge. Health checks also report an older shared router, which survives editor
+restarts; they do not replace it automatically.

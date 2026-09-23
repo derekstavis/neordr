@@ -21,6 +21,9 @@ TARGETS = (
 
 def validate_tag(tag):
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]["version"]
+    lua_version = re.search(r"^return '([^']+)'$", (ROOT / "lua/neordr/version.lua").read_text(), re.MULTILINE)
+    if not lua_version or lua_version[1] != version:
+        raise SystemExit("Lua plugin version must match Cargo.toml before packaging")
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", tag) or tag != f"v{version}":
         raise SystemExit(f"Tag {tag!r} must match Cargo.toml version v{version}")
     return version
@@ -46,6 +49,12 @@ def main():
         shutil.copy2(binary, package / "bin/neordr")
         (package / "bin/neordr").chmod(0o755)
         shutil.copytree(ROOT / "lua", package / "share/neordr/lua")
+        help_dir = package / "share/neordr/doc"
+        shutil.copytree(ROOT / "doc", help_dir, ignore=shutil.ignore_patterns("tags"))
+        help_script = Path(temporary) / "helptags.lua"
+        help_script.write_text("vim.cmd.helptags(vim.fn.fnameescape(arg[1]))\n")
+        subprocess.run(["nvim", "--headless", "-u", "NONE", "-i", "NONE",
+                        "-l", str(help_script), str(help_dir)], check=True, timeout=15)
         shutil.copytree(ROOT / "docs", package / "docs")
         shutil.copy2(ROOT / "README.md", package / "README.md")
         shutil.copy2(ROOT / "Cargo.lock", package / "Cargo.lock")

@@ -23,7 +23,8 @@ initializing the submodule, builds can run offline.
 | `src/backend.rs`, `src/process.rs` | Typed Neovim backend operations and foreground process discovery. |
 | `src/attach.rs` | PTY supervision, remote UI attachment, and shortcut translation. |
 | `src/endpoint/` | Herdr interactive protocol: framing, projection, input sequencing, UI ownership, and rendering. |
-| `lua/neordr/` | Editor integration, terminal identity, lifecycle, and optional adapters. |
+| `lua/neordr/` | Plugin setup, health checks, terminal identity, lifecycle, and optional adapters. |
+| `doc/neordr.txt` | Neovim help for commands, setup options, and adapter contracts. |
 | `build_support/`, `vendor/herdr` | Reviewed upstream contract extraction and source pin. |
 | `tests/`, `examples/herdr_contract_fixture.rs` | Disposable integration fixtures and typed native-client test driver. |
 
@@ -51,6 +52,24 @@ integration suite starts real Neovim instances. Python tests default to
 Core checks cover typed contracts, stale identities, terminal management,
 modal-prompt discovery, remote input, detach, router recovery, and workspace
 selection. Inspect `.github/workflows/ci.yml` for the exact CI matrix.
+
+## Plugin development
+
+The source checkout is a standard Neovim plugin. Add its root to `runtimepath`
+and call `require('neordr').setup({ bin = '/absolute/path/to/target/debug/neordr' })`
+in a disposable configuration. Loading the plugin alone requires no Herdr
+submodule or Rust toolchain; building its executable does.
+
+Keep `:help neordr`, setup option validation, and `:checkhealth neordr` aligned
+when changing the Lua API. Health checks must remain safe to run against an
+editor with active jobs: inspection must not restart the bridge, router, editor,
+or terminals. Test missing executables and incompatible versions as well as
+successful setup, and check startup ordering before terminal creation.
+
+Plugin and executable releases share tags. Update the plugin's supported binary
+version when changing their interface, and package `doc/neordr.txt` alongside
+`lua/` in `share/neordr`. Generate help tags during packaging or installation;
+do not commit machine-generated `doc/tags`.
 
 ## Optional client checks
 
@@ -118,6 +137,7 @@ Release artifacts are named
 are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
 `x86_64-apple-darwin`, and `aarch64-apple-darwin`.
 Archives contain `bin/neordr` and `share/neordr/lua` plus documentation and notices.
+New releases also include Neovim help under `share/neordr/doc`.
 The installed Lua runtimepath is `share/neordr`, not `share/neordr/lua`.
 
 Review `.github/workflows/release.yml` for tag and publication rules. Validate

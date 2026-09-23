@@ -1,0 +1,266 @@
+*neordr.txt*           Neovim sessions for Moshi and Herdr
+
+Neordr turns each Neovim editor into a Herdr-compatible session. Neovim owns the
+editor layout and terminal jobs; remote clients attach to the full editor.
+
+This help describes the development plugin. Help and health checks were added
+after v0.1.0. Plugin and executable releases share version tags.
+
+CONTENTS                                                       *neordr*
+
+    Installation                 |neordr-install|
+    Setup and options            |neordr-setup|
+    Commands                     |neordr-commands|
+    Terminal adapters            |neordr-adapters|
+    Lua API                      |neordr-api|
+    Troubleshooting              |neordr-troubleshooting|
+
+==============================================================================
+INSTALLATION                                                   *neordr-install*
+                                                         *neordr-installation*
+
+Requirements: Linux or macOS, Neovim 0.12+, and a separately installed `neordr`
+executable. Verified Neovim version: 0.12.5. Older Neovim versions lack required
+remote-UI and fast Lua APIs. The plugin does not download executables.
+
+The repository is private during the preview. SSH access to the repository is
+required for the examples below. Install a matching binary from its GitHub
+release or build it separately. Installing only the plugin does not need Cargo
+or initialized Git submodules.
+
+vim.pack (in init.lua) >lua
+    vim.pack.add({
+      { src = 'git@github.com:derekstavis/neordr.git', version = 'main' },
+    })
+    require('neordr').setup()
+<
+lazy.nvim (add to your existing plugin specifications) >lua
+    {
+      url = 'git@github.com:derekstavis/neordr.git',
+      branch = 'main',
+      submodules = false,
+      lazy = false,
+      main = 'neordr',
+      opts = {},
+    }
+<
+The examples use main for the new diagnostics. Pin both plugin and executable
+to the same release for a released installation. With vim.pack use a tag as
+`version`; with lazy.nvim replace `branch` with `tag`. The v0.1.0 plugin has the
+original runtime API but does not include this help or health checks.
+
+Initialize during startup, before terminal jobs are launched. If a terminal
+plugin starts jobs during its setup, make Neordr a dependency of that plugin.
+Use |neordr.prepare()| before starting each managed terminal job.
+
+Alternatively, copy the release archive's share/neordr to ~/.local/share/neordr
+and add it to 'runtimepath': >lua
+    vim.opt.runtimepath:prepend(vim.fn.expand('~/.local/share/neordr'))
+    require('neordr').setup({ bin = vim.fn.expand('~/.local/bin/neordr') })
+<
+New release archives include help tags. When copying help files by hand,
+regenerate the index once: >vim
+    :helptags ~/.local/share/neordr/doc
+<
+Use only one Lua installation. Remove an old manual runtimepath entry when
+switching to a plugin manager so Neovim does not load the wrong version.
+
+==============================================================================
+SETUP AND OPTIONS                                              *neordr-setup*
+
+                                                *neordr.setup()*
+require('neordr').setup({opts})
+    Validate configuration, configure terminal identity, start this editor's
+    bridge, and ensure the shared router is running. The editor gets a Neovim
+    RPC socket automatically when it does not already have one.
+
+    Returns true on successful initialization, or false, error_message on
+    failure. A failed setup reports the problem without aborting the remaining
+    editor configuration. Bridge startup is asynchronous; use
+    |:checkhealth-neordr| to inspect readiness.
+
+    Call setup during startup. Retry with the same session after correcting a
+    setup error. Repeated setup with the same session and executable reuses the
+    running bridge. Changing an initialized session or the executable path of
+    a running bridge is rejected; restart the editor for those changes.
+
+    {opts} is an optional table. No configuration is needed with `neordr` on
+    PATH and the built-in terminal behavior.
+
+bin                                                       *neordr-option-bin*
+    Executable path or command name. Default: vim.fn.exepath('neordr'). Use an
+    absolute path when the editor's PATH differs from your shell's PATH. Setup
+    checks that the binary reports exactly the plugin's expected version.
+
+session                                               *neordr-option-session*
+    Optional explicit session name. By default, Neordr generates a name from
+    the editor's initial directory and process identity. Names should be
+    unique between editors. Allowed names contain 1-64 ASCII letters, digits,
+    hyphens, or underscores; "default" is reserved. Automatic names are normally
+    sufficient.
+
+focus_terminal                                        *neordr-option-focus*
+label_terminal                                        *neordr-option-label*
+create_terminal                                       *neordr-option-create*
+split_terminal                                        *neordr-option-split*
+close_terminal                                        *neordr-option-close*
+reorder_terminals                                      *neordr-option-reorder*
+    Optional callbacks for terminal plugins. See |neordr-adapters|.
+
+==============================================================================
+COMMANDS                                                       *neordr-commands*
+
+:NeordrTerm [command ...]                                       *:NeordrTerm*
+    Open a managed terminal in a bottom split and enter terminal input mode.
+    Without arguments, run 'shell'. Arguments form an executable and its
+    arguments, not a shell expression. For example: >vim
+        :NeordrTerm git status
+<
+    For pipelines or shell quoting, open a shell and type the command there.
+
+    A stopped bridge or failed command launch is reported without leaving an
+    empty split. This is the built-in terminal command. Remote requests use the
+    configured create_terminal adapter, if present.
+
+:NeordrStatus                                                   *:NeordrStatus*
+    Show this editor's session, socket, configured executable, bridge process
+    state, and last startup error. This is local process status; use
+    |:checkhealth-neordr| to verify the session and router connections. It does
+    not restart the editor or its jobs.
+
+:checkhealth neordr                                      *:checkhealth-neordr*
+    Inspect Neovim support, executable availability and compatibility, setup,
+    bridge job, router, and session readiness. This is an inspection command;
+    it does not restart services, change focus, or create terminal jobs.
+
+:help neordr
+    Open this guide.
+
+Once setup succeeds, use these shell commands to find and attach to an editor: >sh
+    neordr session list --json
+    neordr session attach SESSION_NAME
+<
+Detach with Ctrl-B, q or Neovim's :detach. The editor and jobs remain running.
+Quitting Neovim ends the editor and its terminal jobs.
+
+==============================================================================
+TERMINAL ADAPTERS                                               *neordr-adapters*
+
+The built-in terminals need no adapter. To preserve another plugin's panel
+registry, job ownership, and cleanup, pass callbacks to |neordr.setup()|.
+Callbacks execute in the editor and must honor the following contracts.
+
+focus_terminal(buf) ~
+    Restore and focus the terminal panel containing buffer {buf}. Return true
+    when handled. Otherwise Neordr falls back to focusing the buffer itself.
+
+label_terminal(buf) ~
+    Return a display label for terminal buffer {buf}, or nil for its default
+    title. A label explicitly assigned through Neordr takes precedence.
+
+create_terminal(opts) ~
+    Create and return a NEW running terminal buffer number. The request's
+    workspace is current. Apply opts.cwd, opts.env, and opts.label. Call
+    |neordr.prepare()| before starting the job and use its returned environment.
+
+split_terminal(opts) ~
+    Create and return a NEW running terminal buffer beside opts.target_win
+    containing opts.target_buf. The target is focused before the callback.
+    Also apply opts.cwd, opts.env, and opts.label.
+
+    opts.direction is "right" or "down". opts.ratio is the original window's
+    share of the split, strictly between 0 and 1; default 0.5. Neovim's minimum
+    window sizes constrain the final geometry. Call |neordr.prepare()| before
+    starting the job.
+
+    A configured create_terminal callback without split_terminal rejects
+    remote split requests rather than bypassing the plugin's job ownership.
+
+close_terminal(buf) ~
+    Close the terminal through the plugin's lifecycle. Return true when
+    handled; otherwise Neordr uses its default cleanup.
+
+reorder_terminals(buffers) ~
+    Apply the ordered list of terminal buffer IDs for one workspace to your
+    plugin's panel registry. Jobs never migrate between editor processes.
+    The return value is ignored.
+
+Creation failures roll back newly allocated jobs, buffers, and windows. Adapters
+should not reuse an existing terminal or move unrelated jobs into the new slot.
+
+Example of preparing a job within a creation callback: >lua
+    local neordr = require('neordr')
+    neordr.setup({
+      create_terminal = function(opts)
+        vim.cmd('botright new')
+        local buf = vim.api.nvim_get_current_buf()
+        local env = neordr.prepare(buf, opts.env)
+        local job = vim.fn.jobstart({ vim.o.shell }, {
+          term = true, cwd = opts.cwd, env = env,
+        })
+        assert(job > 0, 'Cannot start terminal shell')
+        return buf
+      end,
+    })
+<
+Neordr applies the requested display label to the returned buffer. A plugin with
+its own separate label registry should update that too.
+
+The optional `neordr.tiny_term` module provides close(buf) and reorder(buffers)
+helpers for the project's reference tiny-term panel configuration. It is not a
+complete adapter for arbitrary tiny-term installations; focus, labels,
+creation, splitting, and panel restoration remain configuration-specific.
+
+==============================================================================
+LUA API                                                        *neordr-api*
+
+                                                  *neordr.prepare()*
+require('neordr').prepare({buf}, {env})
+    Register terminal buffer {buf} and return its job environment. Call after
+    creating the buffer, BEFORE starting its terminal job. Setup must already
+    have succeeded. {env} is an optional table of environment variables; it is
+    copied rather than mutated.
+
+    Neordr supplies HERDR_ENV, HERDR_SESSION, and HERDR_PANE_ID, and clears
+    inherited HERDR_SOCKET_PATH, TMUX, and ZELLIJ identity variables. This
+    prevents an agent from inheriting an unrelated multiplexer identity.
+
+    Existing jobs do not acquire updated environment variables retroactively.
+    A terminal discovered after it starts can appear in the sidebar without
+    having the correct Chat View identity; start a new managed terminal.
+
+`neordr.backend` is an internal implementation module, not a public plugin API.
+
+==============================================================================
+TROUBLESHOOTING                                                 *neordr-troubleshooting*
+
+Executable missing or incompatible ~
+    Install the matching binary and ensure it is executable. Set bin to an
+    absolute path if needed. Run :checkhealth neordr, fix the reported problem,
+    and call setup again with your original options. There is no automatic
+    binary download or build step.
+
+Editor absent from Moshi ~
+    Run :checkhealth neordr and :NeordrStatus. Only editors with active bridges
+    appear in the session list; socket discovery alone does not register one.
+    Moshi must resolve its `herdr` command to the Neordr compatibility alias.
+    A real Herdr server cannot own the router's default socket simultaneously.
+
+Chat View absent ~
+    Configure Moshi's normal host service and agent hooks. Initialize Neordr
+    before starting a fresh managed terminal, then launch Claude or Codex.
+    Neordr supplies identity and input; Moshi reads the agent's transcript.
+
+Unexpected small editor ~
+    All attached UIs share focus, layout, mode, and the smallest UI size. A
+    surviving mobile/Mosh connection can keep that constraint active. Detach
+    that connection cleanly; do not quit Neovim merely to release a remote UI.
+
+Upgrades ~
+    Update the executable and Lua plugin together. Replacing an executable
+    does not update an already-running bridge, and repeating setup reuses it.
+    Restart the editor when files are saved and terminal jobs can be stopped,
+    then reconnect remote views. An older shared router can survive editor
+    restarts; health reports its version without replacing it automatically.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

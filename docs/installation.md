@@ -1,7 +1,7 @@
 # Installation
 
-Neordr consists of a Rust executable and a small Neovim Lua integration. Install
-both. Moshi and Herdr are optional clients, installed separately.
+Neordr consists of a Rust executable and a Neovim plugin in the same repository.
+Install the binary and choose one plugin installation method below. Moshi and Herdr are optional clients, installed separately.
 
 ## Requirements
 
@@ -63,10 +63,9 @@ publisher signature.
 ```sh
 mkdir package
 tar -xzf "$archive" -C package --strip-components=1
-mkdir -p "$HOME/.local/bin" "$HOME/.local/share/neordr"
+mkdir -p "$HOME/.local/bin"
 install -m 755 package/bin/neordr "$HOME/.local/bin/neordr.new"
 mv "$HOME/.local/bin/neordr.new" "$HOME/.local/bin/neordr"
-cp -R package/share/neordr/. "$HOME/.local/share/neordr/"
 ```
 
 Add `~/.local/bin` to your shell's `PATH` if needed:
@@ -80,21 +79,99 @@ The release workflow packages binaries; it does not currently provide Apple
 notarization. The binary is replaced atomically so a rebuild or upgrade cannot
 truncate an executable that is already running.
 
-## Configure Neovim
+## Install the Neovim plugin
 
-Add this to your `init.lua`:
+Choose **one** method: a plugin manager, the release archive, or a source
+checkout. Do not leave a second copy of `lua/neordr` on `runtimepath`; Neovim may
+load an older module before your updated plugin.
+
+Plugin-manager installation uses the repository's `lua/` and `doc/` directories.
+It needs neither Cargo nor initialized Git submodules. The executable is
+installed separately by the previous step; there is no build hook or automatic
+binary download.
+
+The examples below select `main` to include the new diagnostics and help files.
+These additions are compatible with the `v0.1.0` binary, but are not part of
+the `v0.1.0` plugin tag. For a released installation, use the
+same tag for the plugin and binary: `version = 'v0.1.0'` with `vim.pack`, or
+`tag = 'v0.1.0'` instead of `branch` with `lazy.nvim`. Development versions may
+change, so update the binary when the plugin's compatibility check requests it.
+
+During the private preview, SSH must authenticate as a GitHub account with
+repository access. GitHub CLI authentication for release downloads does not
+necessarily configure your Git SSH credentials.
+
+### vim.pack
+
+Add this to `init.lua` before configuring plugins that start terminal jobs:
+
+```lua
+vim.pack.add({
+  { src = 'git@github.com:derekstavis/neordr.git', version = 'main' },
+})
+require('neordr').setup()
+```
+
+See [Neovim's package documentation](https://neovim.io/doc/user/pack/) for
+installation and update behavior.
+
+### lazy.nvim
+
+Add this plugin specification to your existing `lazy.nvim` configuration:
+
+```lua
+{
+  url = 'git@github.com:derekstavis/neordr.git',
+  branch = 'main',
+  submodules = false,
+  lazy = false,
+  main = 'neordr',
+  opts = {},
+}
+```
+
+`opts` calls `require('neordr').setup()` at startup. Keep `lazy = false` so the
+editor is discoverable before any Neordr command is invoked. If another plugin
+starts terminal jobs during setup, make Neordr its dependency and use the
+[terminal adapter contract](local-setup.md#terminal-plugin-adapters).
+See [lazy.nvim's specification](https://lazy.folke.io/spec).
+
+### Release archive without a plugin manager
+
+After extracting the archive in the binary installation step:
+
+```sh
+mkdir -p "$HOME/.local/share/neordr"
+cp -R package/share/neordr/. "$HOME/.local/share/neordr/"
+```
+
+Add this to `init.lua`:
 
 ```lua
 vim.opt.runtimepath:prepend(vim.fn.expand('~/.local/share/neordr'))
 require('neordr').setup({ bin = vim.fn.expand('~/.local/bin/neordr') })
 ```
 
+New release archives include the help index; plugin managers generate it
+automatically. When copying help files by hand, regenerate the index with
+`:helptags ~/.local/share/neordr/doc`. The `v0.1.0` archive predates the help file.
+
+### Verify setup
+
+The default executable is `neordr` on Neovim's `PATH`. If your editor inherits a
+different environment from your shell, set `bin` to its absolute path in
+`setup` (or in `opts` for `lazy.nvim`).
+
 The setup starts a bridge for this editor and ensures the shared router is
 running. Session names are generated from the initial directory and editor
 identity; they do not require manual configuration.
 
-Restart Neovim and run `:NeordrTerm`. This opens a managed shell in a split.
-Run `:NeordrStatus` to see its session name, then in another terminal:
+Restart Neovim and run `:checkhealth neordr`. The health command and
+`:help neordr` require the development plugin until the next release. Health
+checks inspect readiness without restarting your editor or terminal jobs.
+
+Run `:NeordrTerm` to open a managed shell in a split, then `:NeordrStatus`
+to see its session name. In another terminal:
 
 ```sh
 neordr session list --json

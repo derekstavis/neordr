@@ -3,4 +3,5 @@
 __pycache__/
 /dist/
 /nvim.log
+/doc/tags
 .DS_Store
