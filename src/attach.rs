@@ -374,10 +374,16 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
                     }
                 }
             }
-            if fds
-                .iter()
-                .any(|fd| fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
-            {
+            let closed = libc::POLLHUP | libc::POLLERR | libc::POLLNVAL;
+            if fds[0].revents & closed != 0 {
+                return Ok(0);
+            }
+            if fds[1].revents & closed != 0 {
+                // Linux can report PTY HUP without POLLIN or a reaped child.
+                if follow_selection && let Some(next) = remaining_editor(config, &name)? {
+                    name = next;
+                    break;
+                }
                 return Ok(0);
             }
         }
