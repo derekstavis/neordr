@@ -73,8 +73,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  draft:
-    name: Assemble draft release
+  publish:
+    name: Publish release
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -96,7 +96,8 @@ jobs:
           test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
           cat ./*.sha256 | sort -k2 > SHA256SUMS
           sha256sum --check SHA256SUMS
-      - name: Create reviewable draft
+      # Stage assets in a draft so a release is never visible half uploaded.
+      - name: Upload release assets
         run: |
           if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > draft-state; then
             test "$(cat draft-state)" = true || { echo 'Refusing to replace a published release'; exit 1; }
@@ -104,3 +105,10 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag --draft --title "Neordr $RELEASE_TAG" --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS --clobber
+      - name: Publish complete release
+        run: |
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --verify-tag --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --verify-tag --draft=false --prerelease=false
+          fi

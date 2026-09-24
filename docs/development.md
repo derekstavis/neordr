@@ -51,7 +51,7 @@ integration suite starts real Neovim instances. Python tests default to
 
 Core checks cover typed contracts, stale identities, terminal management,
 modal-prompt discovery, remote input, detach, router recovery, and workspace
-selection. Inspect `.github/workflows/ci.yml` for the exact CI matrix.
+selection. Inspect `.github/workflows/ci.yml` for the CI checks.
 
 ## Plugin development
 
@@ -132,6 +132,9 @@ Do not claim these modes pass for a new adapter until that adapter is exercised.
 
 ## Releases and website
 
+Regular pull-request and `main` CI runs on Linux x86-64. Release builds run
+tests on Linux and macOS, each on x86-64 and AArch64 native runners.
+
 Release artifacts are named
 `neordr-vVERSION-TARGET.tar.gz` and accompanied by `SHA256SUMS`. The four targets
 are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
@@ -140,9 +143,22 @@ Archives contain `bin/neordr` and `share/neordr/lua` plus documentation and noti
 New releases also include Neovim help under `share/neordr/doc`.
 The installed Lua runtimepath is `share/neordr`, not `share/neordr/lua`.
 
-Review `.github/workflows/release.yml` for tag and publication rules. Validate
-all four platform builds before treating a release as complete; a host build
-does not establish another architecture's runtime compatibility.
+Pushing a version tag automatically builds, tests, and publishes all four
+platform archives and `SHA256SUMS` through `.github/workflows/release.yml`.
+Update the version in `Cargo.toml`, `Cargo.lock`, and `lua/neordr/version.lua`
+together, commit to `main`, and push before tagging that commit:
+
+```sh
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The tag must match the package/plugin version and point to a commit on `main`.
+Publication waits for all four builds and checksum verification. Assets are
+uploaded to a draft, then the complete release is published automatically.
+Tags such as `vX.Y.Z-rc.1` publish as prereleases, without becoming Latest.
+Failed builds do not publish a release. Rerun failed jobs or use the workflow's
+manual tag input to retry; published assets are never overwritten.
 
 The landing page lives in `site/` and deploys through GitHub Pages. Keep its
 feature claims aligned with the README and link private downloads to GitHub's
