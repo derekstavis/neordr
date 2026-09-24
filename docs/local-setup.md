@@ -90,6 +90,14 @@ new-terminal naming dialog.
 
 ## Shared UI size and connection lifetime
 
+On attachment, Neordr automatically acknowledges a blocking Neovim
+"Press ENTER" message, so an error or warning cannot leave the new UI blank.
+This applies to Moshi's terminal view and Herdr's interactive interface.
+The message remains in `:messages`. Confirmation dialogs, input prompts, and
+pager prompts are not answered automatically. Recovery runs only on attachment;
+session discovery never dismisses prompts. If another blocking prompt prevents
+attachment, answer it in an existing UI and reconnect.
+
 All attached UIs share Neovim's focus, layout, and mode. Neovim sizes the editor
 to the smallest attached UI; a phone connection can therefore constrain the
 view seen by a larger client.

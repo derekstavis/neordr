@@ -4,7 +4,7 @@ use std::{
     io::Write,
     os::unix::{fs::FileTypeExt, net::UnixStream},
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail, ensure};
@@ -29,6 +29,61 @@ pub fn exec_lua(socket: &Path, code: &str, args: Vec<Value>) -> Result<Value> {
 /// editor operations must remain sequenced with input through exec_lua.
 pub fn read_lua(socket: &Path, code: &str, args: Vec<Value>) -> Result<Value> {
     lua_rpc(socket, "nvim__exec_lua_fast", code, args)
+}
+
+/// UI attachment itself is deferred. A hit-enter acknowledgement can therefore
+/// strand a new remote UI before it has a screen or an input path.
+/// Recover only while attaching, never during discovery or ordinary polling.
+pub fn prepare_attach(instance: &Instance) -> Result<()> {
+    let generation = instance
+        .generation
+        .as_deref()
+        .context("missing generation")?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut allow_acknowledgement = true;
+    loop {
+        // Check identity and mode alongside input submission, with no scheduled
+        // gap. The editor-local claim prevents simultaneous clients from each
+        // queuing Enter for the same prompt. Clear it after modal input resumes.
+        let response = lua_rpc(
+            &instance.socket,
+            "nvim__exec_lua_fast",
+            r#"
+local generation,pid,allow = ...
+assert(vim.g.neordr_generation == generation and vim.fn.getpid() == pid,
+       'Neovim instance changed; reconnect')
+local mode = vim.api.nvim_get_mode()
+if not mode.blocking then return 'ready' end
+if mode.mode ~= 'r' then return mode.mode end
+if not allow or vim.g.neordr_attach_ack_pending then return 'waiting' end
+vim.g.neordr_attach_ack_pending = true
+vim.schedule(function() vim.g.neordr_attach_ack_pending = nil end)
+assert(vim.api.nvim_input('\r') == 1, 'Could not acknowledge Neovim message')
+return 'waiting'
+"#,
+            vec![
+                generation.into(),
+                instance.pid.into(),
+                allow_acknowledgement.into(),
+            ],
+        )?;
+        let state = response
+            .as_str()
+            .context("invalid attach readiness response")?;
+        if state == "ready" {
+            return Ok(());
+        }
+        ensure!(
+            state == "waiting",
+            "Neovim is waiting for input (mode {state}); answer the prompt in an existing UI, then reconnect"
+        );
+        allow_acknowledgement = false;
+        ensure!(
+            Instant::now() < deadline,
+            "Neovim is still waiting after acknowledging its message; check an existing UI, then reconnect"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn lua_rpc(socket: &Path, method: &str, code: &str, args: Vec<Value>) -> Result<Value> {

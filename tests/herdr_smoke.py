@@ -15,6 +15,7 @@ import threading
 import time
 from moshi_smoke import BIN, eventually, lua, rpc
 from herdr_ordering_smoke import check_tui_ordering, check_native_ordering, check_hit_enter
+from attach_prompt_smoke import fast, fast_script
 
 HERDR = Path(os.environ.get('HERDR_BIN', Path.home() / 'Downloads/herdr-macos-aarch64'))
 
@@ -70,6 +71,11 @@ def main():
                 stdin=reference_slave,stdout=reference_slave,stderr=reference_slave,start_new_session=True)
             children.append(reference)
             eventually(lambda: evaluate('return #vim.api.nvim_list_uis()') == '1')
+            # Initial endpoint attach must recover the same modal error that
+            # prevents nvim --remote-ui from drawing its first frame.
+            script = fast_script(root)
+            os.write(reference_master, b":lua error('HERDR-ATTACH-ERROR')\r")
+            eventually(lambda: fast(env, address, script, 'return vim.api.nvim_get_mode().mode') == 'r')
             client = subprocess.Popen([str(HERDR),'--session','test'],env=env,stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
             children.append(client)
             eventually(lambda: b'NEORDR-EDITOR-MARKER' in output, seconds=15)

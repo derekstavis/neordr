@@ -242,6 +242,13 @@ Executable missing or incompatible ~
     and call setup again with your original options. There is no automatic
     binary download or build step.
 
+Blank remote view after an error ~
+    New attachments automatically acknowledge Neovim's blocking "Press ENTER"
+    messages. The original error or warning remains in |:messages|. Neordr does
+    not answer confirmation dialogs, input prompts, or pager prompts. If one
+    blocks attachment, answer it in an existing UI and reconnect. Discovery and
+    health checks never dismiss prompts.
+
 Editor absent from Moshi ~
     Run :checkhealth neordr and :NeordrStatus. Only editors with active bridges
     appear in the session list; socket discovery alone does not register one.

@@ -70,6 +70,10 @@ Each connection closes its own Neovim RPC channel on detach, connection loss,
 or bridge shutdown. Neovim removes that UI and recalculates its minimum attached
 size. Existing editors, jobs, and other remote UIs survive.
 
+Before attaching, Neordr uses Neovim's fast Lua RPC to acknowledge a blocking
+hit-enter message. This lets the initial UI attach complete after an error or
+warning; confirmations and other input prompts are never answered automatically.
+
 ## Current scope
 
 Named local sessions are supported. Default-router aggregation, SSH federation,

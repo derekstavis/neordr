@@ -132,6 +132,7 @@ pub fn handle(stream: UnixStream, instance: &Instance, stop: Arc<AtomicBool>) ->
     wire::control(&mut client.0, ENDPOINT_WELCOME_KIND, &welcome)?;
     ensure!(compatible, "unsupported Herdr endpoint codecs");
     let (cols, rows) = dimensions(hello.surface_size.cols, hello.surface_size.rows)?;
+    crate::nvim::prepare_attach(instance)?;
     let generation = instance
         .generation
         .as_deref()

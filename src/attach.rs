@@ -59,6 +59,7 @@ struct Ui {
 impl Ui {
     fn start(config: &Path, name: &str) -> Result<Self> {
         let instance = session::inspect_bridge(&session::socket_path(config, name)?)?;
+        crate::nvim::prepare_attach(&instance)?;
         let (mut master, mut slave) = (-1, -1);
         let mut size = dimensions()?;
         ensure!(
