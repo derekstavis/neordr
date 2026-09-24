@@ -8,6 +8,7 @@ pub mod api;
 pub mod attach;
 pub mod backend;
 pub mod contracts;
+pub mod editors;
 pub mod endpoint;
 pub mod gestures;
 pub mod nvim;

@@ -4,9 +4,9 @@ use crate::{
     contracts::api::{
         EmptyParams, ErrorBody, Method, ResponseResult, WorkspaceInfo, WorkspaceMoveParams,
     },
-    protocol, session,
+    protocol,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::{fs, io::Write, os::unix::fs::OpenOptionsExt, path::Path, sync::Mutex};
 
 static MOVES: Mutex<()> = Mutex::new(());
@@ -63,41 +63,8 @@ pub fn move_workspace(
         .into());
     }
     let destination = if source < index { index - 1 } else { index };
-    let (name, _) = id.split_once(':').context("missing session prefix")?;
-    let prefix = format!("{name}:");
     let row = rows.remove(source);
     rows.insert(destination, row);
-    let local_destination = rows[..destination]
-        .iter()
-        .filter(|row| row.workspace_id.starts_with(&prefix))
-        .count();
-    let socket = session::socket_path(config, name)?;
-    session::inspect_bridge(&socket)?;
-    let local = protocol::call_typed(&socket, &list)?;
-    let ResponseResult::WorkspaceList {
-        workspaces: local_rows,
-    } = local.result
-    else {
-        anyhow::bail!("invalid local workspace list");
-    };
-    let local_source = local_rows
-        .iter()
-        .position(|row| row.workspace_id == *id)
-        .context("workspace disappeared")?;
-    protocol::call_typed(
-        &socket,
-        &api::request(
-            request_id,
-            Method::WorkspaceMove(WorkspaceMoveParams {
-                workspace_id: id.clone(),
-                insert_index: if local_source < local_destination {
-                    local_destination + 1
-                } else {
-                    local_destination
-                },
-            }),
-        ),
-    )?;
     let order: Vec<_> = rows.iter().map(|row| &row.workspace_id).collect();
     let root = config.join("herdr");
     let temporary = root.join(format!(".neordr-order-{}.tmp", std::process::id()));

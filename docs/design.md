@@ -1,6 +1,6 @@
 # Design and compatibility contract
 
-## Implemented state (2026-09-22)
+## Implemented state (development)
 
 The session bridge, terminal model, Lua lifecycle integration, Claude/Codex
 foreground discovery and host-side Chat View path are implemented. The installed
@@ -12,7 +12,7 @@ tiny-term configuration are also exercised by smoke tests.
 Testing uncovered a load-bearing binary behavior: prompt submission omits the
 named session when choosing its Herdr API socket. A shared default-socket router
 therefore routes explicit globally unique IDs to the per-instance servers.
-IDs include the session prefix, Neovim generation, tabpage and terminal lifetime.
+IDs include the internal bridge prefix, Neovim generation, and terminal lifetime.
 The router checks for a supported foreground agent before session-less input.
 
 The design notes below explain the architecture and original milestones. See the
@@ -25,12 +25,19 @@ Moshi gateway with simulated Claude/Codex screens at desktop and phone widths.
 See [approval compatibility](approval-compatibility.md) for the exact coverage,
 wrapped-title limitation, and stale Claude question hook-state behavior.
 
-Close operations delegate terminal destruction to the configured plugin callback.
-Workspace close checks for modified editor buffers before stopping jobs and
-leaves a new editor tab when closing the final workspace. Terminal reorder is
-stored in tabpage-local buffer IDs and propagated to plugin panel registries.
-Workspace reorder uses Neovim's tab order; the default router also stores an
-atomic combined order in `herdr/.neordr-order.json` for its cross-editor sidebar.
+A session groups editor processes; currently one default session is supported.
+Each editor is one workspace. Native tabpages are layout within that editor.
+Workspace creation launches a detached headless process, loads normal user config,
+and creates a shell. The registry records socket, PID, generation, and ownership;
+recovery validates identity before reconnecting. Process lifetime is independent
+of server or CLI lifetime. Explicit workspace close checks all modified editor
+buffers and then quits the editor and its jobs, regardless of ownership.
+An empty default session continues serving creation requests.
+
+Terminal close delegates to the configured plugin callback. Terminal order uses
+stable buffer IDs across native tabs; adapter callbacks receive only the current
+native tab's terminals. Workspace order is stored atomically by the session
+server in `herdr/.neordr-order.json`.
 The indexes use Herdr's insertion-boundary semantics, including insertion at
 the item count to move an item to the end. Backend API errors retain their
 structured code through the router, allowing Moshi's `invalid_request` fallback.
@@ -60,8 +67,8 @@ API input; returning to a shell after agent exit does not renew it.
 
 The terminal adapter's `create_terminal(opts)` callback keeps plugin ownership
 of terminal jobs and panels. Explicit labels override dynamic terminal titles
-without changing the stable pane or tab IDs. New workspaces use a tab-local cwd;
-terminal creation can override its job cwd without changing other workspaces.
+without changing the stable pane or tab IDs. New workspaces start an editor in the requested directory; terminal creation
+can override its job cwd without changing other workspaces.
 
 Discovery uses Neovim 0.12's experimental `nvim__exec_lua_fast` entry point for
 bounded identity reads, so modal prompts do not hide a running session. Normal
@@ -99,10 +106,9 @@ workspace-navigation input belong to each attachment, not global Neovim mappings
 
 Tabs cycle terminal buffers through the existing focus adapter. Pane gestures
 cycle visible Neovim splits (a presentation-level extension; the API model still
-has one pane per virtual tab). The workspace navigator switches tabpages inside
-the current editor; cross-editor focus remains the default router's responsibility.
-The default attachment still follows router selections; named attachments remain
-pinned. A new attachment is required to pick up a rebuilt transport executable.
+has one pane per virtual tab). The default workspace navigator obtains the full
+session list and switches the remote UI between editors after acknowledging
+prior input. Explicit legacy bridge-name attachments remain pinned. A new attachment is required to pick up a rebuilt transport executable.
 
 Zoom uses a floating window showing the same buffer, leaving the original split
 tree and plugin window identities intact. It resizes with the editor and records
@@ -141,8 +147,9 @@ socket or overwrite a user's existing herdr executable.
 
 ## Ownership and identity
 
-- Neovim instance: named Herdr session.
-- Neovim tabpage: virtual workspace.
+- Session: group of Neovim instances (one default group today).
+- Neovim instance: workspace.
+- Native tabpage: editor layout within the workspace.
 - Terminal buffer/job: virtual tab containing a pane.
 - Neovim windows: presentation, not persistent terminal identity.
 
@@ -209,7 +216,7 @@ Neordr extensions compose upstream types rather than redefining their fields.
 See [contract generation](../build_support/README.md) for the pin and update rules.
 
 The Herdr client bridge implements stable endpoint generation 1 independently,
-using bincode 2 framing on each named session's `herdr-client.sock`. It projects
+using bincode 2 framing on the default and per-editor `herdr-client.sock`. It projects
 the existing Neordr workspace model into Herdr's shell snapshot and translates
 Neovim `ext_linegrid` events into Herdr cells. Semantic input goes to Neovim RPC,
 preserving the full editor. Closing the endpoint's RPC connection detaches its UI.

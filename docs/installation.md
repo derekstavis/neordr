@@ -163,8 +163,8 @@ different environment from your shell, set `bin` to its absolute path in
 `setup` (or in `opts` for `lazy.nvim`).
 
 The setup starts a bridge for this editor and ensures the shared router is
-running. Session names are generated from the initial directory and editor
-identity; they do not require manual configuration.
+running. Internal bridge names are generated from the initial directory and editor
+identity. Editors appear as workspaces in the default session.
 
 Restart Neovim and run `:checkhealth neordr`. The health command and
 `:help neordr` require the development plugin until the next release. Health
@@ -175,11 +175,11 @@ to see its session name. In another terminal:
 
 ```sh
 neordr session list --json
-neordr --session SESSION_NAME rpc pane.list
-neordr session attach SESSION_NAME
+neordr --session default rpc pane.list
+neordr session attach default
 ```
 
-`SESSION_NAME` is the name returned by `session list`. Attachments share your
+`default` is the session returned by `session list`. Attachments share your
 editor's state. Detach with Ctrl-B, q or `:detach`; quitting Neovim stops its
 terminal jobs.
 
@@ -203,7 +203,8 @@ Herdr, keep its real executable separately and arrange your Moshi host's `PATH`
 so it resolves the intended alias. Neordr's router and a real Herdr server
 cannot own the same default Herdr socket at the same time.
 
-Reconnect Moshi to the host. Neovim sessions appear in its **Herdr** picker.
+Reconnect Moshi to the host. The default session appears in its **Herdr** picker;
+its sidebar contains one workspace per Neovim editor.
 Create a new managed terminal, start `claude` or `codex`, and select **Chat** to
 use Chat View or **Term** for the complete editor. Agent processes started
 before integration was enabled do not acquire its environment retroactively.
@@ -213,11 +214,11 @@ before integration was enabled do not acquire its environment retroactively.
 Keep an actual Herdr executable at a separate path from the Moshi alias:
 
 ```sh
-/path/to/herdr --session SESSION_NAME
+/path/to/herdr --session default
 ```
 
 Herdr supplies its sidebar and terminal interface around Neovim's full editor.
-Use a **named** session; the default Neordr router serves Moshi's JSON API.
+The default session serves both Moshi's JSON API and Herdr's interactive UI.
 See [Herdr interface compatibility](herdr-interface.md) for supported versions
 and input behavior. Herdr is not included in Neordr release archives.
 

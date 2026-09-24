@@ -62,6 +62,8 @@ pub struct GestureParams {
     pub owner: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspaces: Option<Vec<WorkspaceInfo>>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct GestureOwner {
@@ -73,6 +75,7 @@ pub struct Marker {
 }
 #[derive(Deserialize)]
 pub struct GestureResult {
+    pub workspace_id: Option<String>,
     pub done: bool,
     #[serde(default)]
     pub ok: bool,

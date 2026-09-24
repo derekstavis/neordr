@@ -34,6 +34,9 @@ def main():
                 ' os.write(1,b"RECEIVED "+data.hex().encode()+b"\\r\\n")\n')
             fake.chmod(0o755)
         children = []
+        managed = []
+        (root/'config/nvim').mkdir(parents=True)
+        (root/'config/nvim/init.lua').write_text("vim.o.shell='/bin/sh'; vim.o.shadafile='NONE'\n")
         address = root / 'nvim.sock'
         endpoint = root / 'config/herdr/sessions/create/herdr.sock'
         router = root / 'config/herdr/herdr.sock'
@@ -58,14 +61,17 @@ def main():
                 subprocess.run([HOOK, 'set', setting, 'off'], env=env, check=True, capture_output=True)
             start([HOOK, 'serve', '--gateway-listen', f'127.0.0.1:{port}'], 'moshi')
             eventually(lambda: http(port, '/v1/version')[0] == 200)
-            for mux in ['herdr', 'herdr:create']:
+            for mux in ['herdr', 'herdr:default']:
                 cwd = root / ('project ' + mux.replace(':', '-') + " ' quoted")
                 cwd.mkdir()
                 status, reply = http(port, '/v1/workspaces/create?mux=' + mux,
                                      {'cwd': str(cwd), 'label': 'Remote project'})
                 assert status == 200, (status, reply)
-                ws = next(w for w in rpc(endpoint, 'workspace.list')['workspaces'] if w['label'] == 'Remote project')
+                ws = next(w for w in rpc(router, 'workspace.list')['workspaces'] if w['label'] == 'Remote project')
                 workspace = ws['workspace_id']
+                key = workspace.split(':')[0]
+                endpoint = root/'config/herdr/sessions'/key/'herdr.sock'
+                managed.append(rpc(endpoint, 'ping')['neordr'])
                 # Rename at all supported levels, including a user-visible name that differs from cwd.
                 status, reply = http(port, '/v1/workspaces/rename?mux=' + mux,
                                      {'workspaceId': workspace, 'label': mux + ' project'})
@@ -80,7 +86,7 @@ def main():
                     eventually(lambda: rpc(endpoint, 'pane.get', {'pane_id': pid})['pane'].get('agent') == source)
                     eventually(lambda: 'READY_' + source in rpc(endpoint, 'pane.read', {'pane_id': pid})['read']['text'])
                     launches = [json.loads(l) for l in (root / 'launches.jsonl').read_text().splitlines()]
-                    assert any(l == {'agent': source, 'pane': pid, 'session': 'create', 'cwd': str(cwd)} for l in launches), launches
+                    assert any(l == {'agent': source, 'pane': pid, 'session': key, 'cwd': str(cwd)} for l in launches), launches
                     rpc(router, 'pane.send_text', {'pane_id': pid, 'text': 'agent-input'})
                     eventually(lambda: '6167656e742d696e707574' in rpc(endpoint, 'pane.read', {'pane_id': pid})['read']['text'])
                     # Return to the same shell. The launch exception must not allow stale chat input.
@@ -117,13 +123,17 @@ def main():
                 assert status == 200, (status, reply)
                 status, reply = http(port, '/v1/workspaces/close?mux=' + mux, {'workspaceId': workspace})
                 assert status == 200, (status, reply)
-                assert all(w['workspace_id'] != workspace for w in rpc(endpoint, 'workspace.list')['workspaces'])
+                assert all(w['workspace_id'] != workspace for w in rpc(router, 'workspace.list')['workspaces'])
                 print(mux + ': terminal/workspace reorder and pane/tab/workspace close: PASS')
         except Exception:
             for p in root.glob('*.log'):
                 print(p.name, p.read_text()[-2000:])
             raise
         finally:
+            for instance in managed:
+                if Path(instance['socket']).exists():
+                    try: os.kill(instance['pid'], 15)
+                    except ProcessLookupError: pass
             for child, log in reversed(children):
                 if child.poll() is None:
                     child.terminate()

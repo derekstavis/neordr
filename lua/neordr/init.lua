@@ -142,7 +142,8 @@ function M.setup(opts)
   if not validated then return fail(problem) end
   local generation = vim.g.neordr_generation or (vim.fn.getpid() .. '-' .. string.format('%x', vim.uv.hrtime()))
   local project = vim.fn.fnamemodify(vim.fn.getcwd(), ':t'):gsub('[^%w_-]', '-'):sub(1,30)
-  local session = opts.session or M.session or ('nvim-' .. project .. '-' .. vim.fn.getpid() .. '-' .. generation:sub(-8))
+  local managed = vim.env.NEORDR_WORKSPACE_ID
+  local session = (managed and managed ~= '' and managed) or opts.session or M.session or ('nvim-' .. project .. '-' .. vim.fn.getpid() .. '-' .. generation:sub(-8))
   if backend.session and backend.session ~= session then
     return fail('This editor is already registered as ' .. backend.session .. '. Restart Neovim to change session')
   end

@@ -1,8 +1,9 @@
 use std::{
-    fs,
+    fs::{self, OpenOptions},
     io::{BufReader, Write},
+    os::fd::AsRawFd,
     os::unix::{
-        fs::{DirBuilderExt, PermissionsExt},
+        fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt},
         net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
@@ -11,7 +12,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, ensure};
@@ -39,14 +40,34 @@ pub fn serve(socket: &Path, nvim_socket: &Path) -> Result<()> {
         .recursive(true)
         .mode(0o700)
         .create(parent)?;
-    // Never unlink an existing endpoint, even if it appears stale: it may be
-    // owned by Herdr or another concurrently starting Neordr process.
-    let listener = UnixListener::bind(socket).with_context(|| {
-        format!(
-            "bind {}; existing sockets are never replaced",
-            socket.display()
-        )
-    })?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .open(parent.join(".neordr-bridge.lock"))?;
+    ensure!(
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
+        "editor bridge is already running"
+    );
+    let marker = parent.join(".neordr-bridge-owned");
+    // A lock and previous ownership are both required for crash recovery.
+    // Never replace a foreign endpoint, a regular file, or an accepting socket.
+    for endpoint in [socket.to_owned(), parent.join("herdr-client.sock")] {
+        if let Ok(metadata) = endpoint.symlink_metadata() {
+            ensure!(
+                marker.exists()
+                    && metadata.file_type().is_socket()
+                    && UnixStream::connect(&endpoint).is_err(),
+                "refusing to replace existing endpoint {}",
+                endpoint.display()
+            );
+            fs::remove_file(endpoint)?;
+        }
+    }
+    let listener = UnixListener::bind(socket)?;
+    fs::write(marker, "Neordr editor bridge endpoints\n")?;
     let _guard = SocketGuard(socket.to_owned());
     fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
     let session = parent
@@ -54,6 +75,7 @@ pub fn serve(socket: &Path, nvim_socket: &Path) -> Result<()> {
         .and_then(|s| s.to_str())
         .context("invalid session name")?;
     backend::initialize(&initial, session)?;
+    crate::editors::record(&crate::session::config_root()?, session, &initial)?;
     listener.set_nonblocking(true)?;
     let client_socket = parent.join("herdr-client.sock");
     let clients = UnixListener::bind(&client_socket).with_context(|| {
@@ -86,7 +108,9 @@ pub fn serve(socket: &Path, nvim_socket: &Path) -> Result<()> {
                 let initial = initial.clone();
                 let stop = stop.clone();
                 thread::spawn(move || {
-                    if let Err(error) = endpoint::handle(stream, &initial, stop) {
+                    if let Err(error) =
+                        endpoint::handle(stream, endpoint::Target::Editor(initial), stop)
+                    {
                         // Herdr probes the socket by connecting and immediately closing it.
                         if error.downcast_ref::<std::io::Error>().is_none() {
                             eprintln!("Herdr endpoint: {error:#}");
@@ -117,6 +141,15 @@ pub fn serve(socket: &Path, nvim_socket: &Path) -> Result<()> {
             }
             Err(e) => return Err(e.into()),
         }
+    }
+    // Explicit workspace close runs in a request worker. Let it acknowledge
+    // editor exit before the main thread tears down the process and sockets.
+    stop.store(true, Ordering::Relaxed);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while (active.load(Ordering::Relaxed) > 0 || active_clients.load(Ordering::Relaxed) > 0)
+        && Instant::now() < deadline
+    {
+        thread::sleep(Duration::from_millis(10));
     }
     Ok(())
 }
@@ -180,9 +213,17 @@ pub fn execute(request: &crate::api::Request, initial: &Instance) -> crate::api:
                 },
                 identity: Identity {
                     neordr: Some(current),
+                    pid: Some(std::process::id()),
                     ..Identity::default()
                 },
             });
+        }
+        if let Command::Herdr(Method::WorkspaceCreate(params)) = &request.command {
+            return crate::editors::create(&crate::session::config_root()?, params, Some(initial));
+        }
+        if let Command::Herdr(Method::WorkspaceClose(params)) = &request.command {
+            ensure!(!params.close_group, "Workspace groups are not supported");
+            return crate::editors::close(initial, &params.workspace_id);
         }
         Ok(backend::dispatch(initial, &request.command)?.into())
     })();

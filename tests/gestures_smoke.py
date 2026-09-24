@@ -34,6 +34,8 @@ def main():
             config.write_text(config.read_text().replace('bin = bin,', 'bin = ' + json.dumps(str(BIN)) + ','))
         address = root/'nvim.sock'
         children, master, slave, reader = [], None, None, None
+        second_ws = None
+        router = root/'config/herdr/herdr.sock'
         stop_reader = threading.Event()
         log = open(root/'log', 'w')
         try:
@@ -56,8 +58,9 @@ def main():
             ws = rpc(endpoint, 'workspace.list')['workspaces'][0]['workspace_id']
             a = rpc(endpoint, 'tab.create', {'workspace_id': ws, 'label': 'First', 'focus': True})['root_pane']
             b = rpc(endpoint, 'tab.create', {'workspace_id': ws, 'label': 'Second', 'focus': True})['root_pane']
-            second_ws = rpc(endpoint, 'workspace.create', {'label': 'Other workspace', 'focus': True})['workspace']['workspace_id']
-            rpc(endpoint, 'pane.focus', {'pane_id': a['pane_id']})
+            second_ws = rpc(router, 'workspace.create', {'label': 'Other workspace', 'focus': True})['workspace']['workspace_id']
+            rpc(router, 'workspace.move', {'workspace_id': ws, 'insert_index': 0})
+            rpc(router, 'pane.focus', {'pane_id': a['pane_id']})
             identities = json.loads(evaluate("local r={}; for _,p in ipairs(require('neordr.backend').snapshot().panes) do "
                 "if p.neordr.channel then r[p.pane_id]=vim.fn.jobpid(p.neordr.channel) end end; return vim.json.encode(r)"))
             mapping = evaluate("return vim.fn.sha256(vim.inspect({vim.api.nvim_get_keymap('n'),vim.api.nvim_get_keymap('t')}))")
@@ -73,7 +76,7 @@ def main():
                 expected[3] &= ~getattr(termios, 'PENDIN', 0)
                 return actual == expected
             def attach():
-                child = subprocess.Popen([str(BIN), '--session', name], env=env, stdin=slave,
+                child = subprocess.Popen([str(BIN), '--session', 'default'], env=env, stdin=slave,
                     stdout=slave, stderr=slave, start_new_session=True)
                 children.append(child)
                 eventually(lambda: evaluate('return #vim.api.nvim_list_uis()') == '1')
@@ -126,12 +129,12 @@ def main():
             send(b'\x02w')
             eventually(lambda: evaluate("return require('neordr.backend').navigator ~= nil") == 'true')
             send(b'\x1b[B\r')
-            eventually(lambda: rpc(endpoint, 'workspace.list')['workspaces'][1]['focused'])
+            eventually(lambda: rpc(router, 'session.snapshot')['snapshot']['focused_workspace_id'] == second_ws)
             send(b'\x02w\x1b[A\r')
-            eventually(lambda: rpc(endpoint, 'workspace.list')['workspaces'][0]['focused'])
+            eventually(lambda: rpc(router, 'session.snapshot')['snapshot']['focused_workspace_id'] == ws)
             send(b'\x02w\x1b[B\x1b')
             eventually(lambda: evaluate("return require('neordr.backend').navigator == nil") == 'true')
-            assert rpc(endpoint, 'workspace.list')['workspaces'][0]['focused']
+            assert rpc(router, 'session.snapshot')['snapshot']['focused_workspace_id'] == ws
             # No control prefix may reach the terminal job; bracketed paste is literal.
             capture, ready = root/'input', root/'ready'
             receiver = root/'receiver.py'
@@ -229,6 +232,9 @@ def main():
             print(bytes(output[-3000:]) if 'output' in locals() else '')
             raise
         finally:
+            if second_ws:
+                try: rpc(router, 'workspace.close', {'workspace_id': second_ws})
+                except Exception: pass
             for child in reversed(children):
                 if child.poll() is None:
                     child.terminate()

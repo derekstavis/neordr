@@ -11,9 +11,10 @@ Validated with the unmodified macOS ARM64 binary supplied on September 22, 2026:
 ## Connecting
 
 Run `neordr session list`, then invoke the downloaded Herdr binary with
-`--session NAME`. The named Neordr bridge must have been restarted after installing
-the endpoint-capable executable. This restarts only the bridge, not Neovim or its
-terminal jobs. Keep the existing `herdr -> neordr` symlink for Moshi.
+`--session default`. Its sidebar groups separate Neovim editors as workspaces;
+selection switches the remote UI connection between them. The session remains
+available after its last workspace closes. Legacy per-editor bridge names still
+support pinned attachment. Keep the `herdr -> neordr` symlink for Moshi.
 
 Herdr may show its own first-run onboarding. That is client-local; Neordr does
 not install Herdr agent integrations or replace the existing Moshi hooks. Herdr's
@@ -21,8 +22,9 @@ not install Herdr agent integrations or replace the existing Moshi hooks. Herdr'
 
 ## How it works
 
-Each bridge exposes a second mode-0600 Unix socket, `herdr-client.sock`, next to
-the JSON `herdr.sock`. It never replaces an existing socket. The Herdr preflight
+The session server and each internal bridge expose a mode-0600 Unix socket,
+`herdr-client.sock`, next to the JSON `herdr.sock`. Crash recovery replaces only
+unresponsive sockets marked as Neordr-owned, while holding an exclusive lock. The Herdr preflight
 reads `capabilities.endpoint_protocol_generation = 1`. JSON ping replies and
 session snapshots advertise the protocol version from the pinned Herdr schema
 (currently 22), because Herdr also checks that version before ordinary CLI API

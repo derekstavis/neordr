@@ -25,23 +25,21 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 
 // Do not recompute the snapshot here: it calls jobwait, which is not fast-safe.
 // Live buffer/tab IDs applied to the retained topology give the same virtual
-// pane policy (matching terminal, otherwise first pane in the editor tab).
+// pane policy (matching terminal, otherwise first pane in the workspace).
 // Never focus the terminal: its surface may currently be editing a file.
 const GUARDED_FAST_INPUT: &str = r#"
 local generation, pane, method, args = ...
 if generation ~= vim.g.neordr_generation then error('Neordr generation changed') end
 local backend = require('neordr.backend')
-local tab, buf = vim.api.nvim_get_current_tabpage(), vim.api.nvim_get_current_buf()
+local buf = vim.api.nvim_get_current_buf()
 -- A newly-created terminal may not be in the retained snapshot yet. Its own
 -- registered identity must never fall through to an older editor surface.
 local registered = vim.b[buf].neordr_pane
 if registered and registered ~= pane then return { false } end
 local focused, matched_buffer
 for _, row in ipairs((backend.last_snapshot or {}).panes or {}) do
-  if row.neordr.tabpage == tab then
-    if not focused then focused = row.pane_id end
-    if row.neordr.buf == buf then focused = row.pane_id; matched_buffer = true; break end
-  end
+  if not focused then focused = row.pane_id end
+  if row.neordr.buf == buf then focused = row.pane_id; matched_buffer = true; break end
 end
 if not matched_buffer and vim.api.nvim_get_option_value('buftype', { buf = buf }) == 'terminal' then
   return { false }

@@ -42,6 +42,14 @@ impl Grid {
             dirty: false,
         }
     }
+    pub fn clear(&mut self, width: u16, height: u16) {
+        *self = Self::new();
+        self.width = width;
+        self.height = height;
+        self.cells = vec![(" ".into(), 0); usize::from(width) * usize::from(height)];
+        self.ready = true;
+        self.dirty = true;
+    }
     pub fn redraw(&mut self, events: &[Value]) -> Result<()> {
         for event in events {
             let Some(parts) = event.as_array() else {

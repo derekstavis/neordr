@@ -53,9 +53,7 @@ def main():
                 except OSError: pass
             reader = threading.Thread(target=drain, daemon=True)
             reader.start()
-            eventually(lambda: b'Session number:' in output)
-            os.write(master, b'2\n')
-            eventually(lambda: lua(env, sockets['second'], 'return #vim.api.nvim_list_uis()') == '1')
+            eventually(lambda: lua(env, sockets['first'], 'return #vim.api.nvim_list_uis()') == '1')
             # The default client must follow successful focus changes, not pick
             # the first session or keep forwarding input to the previous one.
             for iteration, name in enumerate(['first', 'second'], 1):
@@ -66,10 +64,14 @@ def main():
                 eventually(lambda: lua(env, sockets[other], 'return #vim.api.nvim_list_uis()') == '0')
                 os.write(master, f':lua vim.g.default_ui_marker = {iteration}\r'.encode())
                 eventually(lambda: lua(env, sockets[name], 'return vim.g.default_ui_marker or 0') == str(iteration))
+            # Closing the selected editor moves this default attachment to a survivor.
+            workspace = rpc(endpoints['second'], 'workspace.list')['workspaces'][0]['workspace_id']
+            rpc(router, 'workspace.close', {'workspace_id': workspace})
+            eventually(lambda: lua(env, sockets['first'], 'return #vim.api.nvim_list_uis()') == '1')
             os.write(master, b':detach\r')
             assert attached.wait(timeout=5) == 0
-            assert all(child.poll() is None for child in children[:-1]), 'attachment killed an editor'
-            print('Default picker, cross-editor focus switching, input isolation, and detach: PASS')
+            assert children[0].poll() is None and children[1].poll() is None, 'attachment killed the surviving editor'
+            print('Default session, cross-editor focus switching, input isolation, and detach: PASS')
         finally:
             for child in reversed(children):
                 if child.poll() is None:

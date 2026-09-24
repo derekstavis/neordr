@@ -44,6 +44,9 @@ pub fn config_root() -> Result<PathBuf> {
 }
 
 pub fn socket_path(config: &Path, name: &str) -> Result<PathBuf> {
+    if name == "default" {
+        return Ok(config.join("herdr/herdr.sock"));
+    }
     validate_name(name)?;
     Ok(config.join("herdr/sessions").join(name).join("herdr.sock"))
 }
@@ -63,7 +66,7 @@ pub fn inspect_bridge(socket: &Path) -> Result<Instance> {
         .context("this session is not served by Neordr")
 }
 
-pub fn list(config: &Path) -> Result<Vec<SessionInfo>> {
+pub fn bridges(config: &Path) -> Result<Vec<SessionInfo>> {
     let root = config.join("herdr/sessions");
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
@@ -95,4 +98,25 @@ pub fn list(config: &Path) -> Result<Vec<SessionInfo>> {
     }
     sessions.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(sessions)
+}
+
+/// The default session groups all registered editor workspaces. Per-editor
+/// endpoints remain addressable for existing clients, but are not sessions.
+pub fn list(config: &Path) -> Result<Vec<SessionInfo>> {
+    let socket = config.join("herdr/herdr.sock");
+    if protocol::call_typed(
+        &socket,
+        &api::request("session:list", Method::Ping(PingParams {})),
+    )
+    .is_err()
+    {
+        return Ok(vec![]);
+    }
+    Ok(vec![SessionInfo {
+        name: "default".into(),
+        default: true,
+        running: true,
+        socket_path: socket,
+        session_dir: config.join("herdr"),
+    }])
 }

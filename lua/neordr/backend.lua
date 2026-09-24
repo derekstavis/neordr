@@ -7,7 +7,7 @@ M.next_marker = M.next_marker or 0
 local api = vim.api
 local function array(t) return setmetatable(t or {}, vim._empty_array_mt) end
 local function fail(code, message) error({ code = code, message = message }, 0) end
-local function workspace(tab) return assert(M.session) .. ':g' .. assert(vim.g.neordr_generation) .. ':w' .. tab end
+local function workspace() return assert(M.session) .. ':g' .. assert(vim.g.neordr_generation) .. ':w1' end
 local function tab_of(buf)
   local tab = vim.b[buf].neordr_tabpage
   if tab and api.nvim_tabpage_is_valid(tab) then return tab end
@@ -27,6 +27,7 @@ end
 function M.configure(session)
   assert(not M.session or M.session == session, 'Neovim is already registered under another Neordr session')
   M.session = session
+  M.cwd = M.cwd or vim.fn.getcwd()
   local group = api.nvim_create_augroup('NeordrBackend', { clear = true })
   api.nvim_create_autocmd('TermOpen', { group = group, callback = function(ev) M.register(ev.buf) end })
   api.nvim_create_autocmd('TermRequest', { group = group, callback = function(ev)
@@ -55,7 +56,7 @@ function M.prepare(buf, env)
   assert(M.session, 'Neordr is not configured')
   local result = vim.tbl_extend('force', {}, env or {}, {
     HERDR_ENV = '1', HERDR_SESSION = M.session, HERDR_PANE_ID = M.register(buf),
-    HERDR_SOCKET_PATH = '',
+    HERDR_SOCKET_PATH = '', NEORDR_WORKSPACE_ID = '',
     TMUX = '', TMUX_PANE = '', ZELLIJ = '', ZELLIJ_SESSION_NAME = '', ZELLIJ_PANE_ID = '',
   })
   return result
@@ -107,37 +108,35 @@ function M.snapshot()
       end
     end
   end
+  local ws, rows = workspace(), {}
   for _, tab in ipairs(api.nvim_list_tabpages()) do
-    local ws, rows = workspace(tab), by_tab[tab]
-    -- An editor-only tab remains attachable and navigable, but never receives
-    -- terminal input or claims every descendant of the Neovim process.
-    if #rows == 0 then
-      local pane = ws .. ':editor'
-      local row = { pane_id = pane, terminal_id = pane, workspace_id = ws, tab_id = pane .. ':tab',
-        focused = tab == current_tab, cwd = vim.fn.getcwd(-1, api.nvim_tabpage_get_number(tab)),
-        label = 'Editor', agent_status = 'unknown', revision = 0, neordr = { tabpage = tab } }
-      table.insert(rows, row)
-    end
-    local rank = {}
-    for i, buf in ipairs(vim.t[tab].neordr_terminal_order or {}) do rank[buf] = i end
-    table.sort(rows, function(a, b)
-      local ab, bb = a.neordr.buf or 0, b.neordr.buf or 0
-      local ar, br = rank[ab] or math.huge, rank[bb] or math.huge
-      return ar == br and ab < bb or ar < br
-    end)
-    local active = rows[1]
-    for _, row in ipairs(rows) do if row.focused then active = row end end
-    if tab == current_tab then active.focused = true end
-    for i, row in ipairs(rows) do
-      table.insert(panes, row)
-      table.insert(tabs, { tab_id = row.tab_id, workspace_id = ws, number = i,
-        label = row.label, focused = row.focused, pane_count = 1, agent_status = row.agent_status })
-    end
-    local cwd = vim.fn.getcwd(-1, api.nvim_tabpage_get_number(tab))
-    table.insert(workspaces, { workspace_id = ws, number = api.nvim_tabpage_get_number(tab),
-      label = vim.t[tab].neordr_label or vim.fn.fnamemodify(cwd, ':t'), focused = tab == current_tab,
-      pane_count = #rows, tab_count = #rows, active_tab_id = active.tab_id, agent_status = 'unknown' })
+    for _, row in ipairs(by_tab[tab]) do rows[#rows + 1] = row end
   end
+  -- Native tabpages stay editor layout, not separate Herdr workspaces.
+  if #rows == 0 then
+    local pane = ws .. ':editor'
+    rows[1] = { pane_id = pane, terminal_id = pane, workspace_id = ws, tab_id = pane .. ':tab',
+      focused = true, cwd = M.cwd, label = 'Editor', agent_status = 'unknown', revision = 0,
+      neordr = { tabpage = current_tab } }
+  end
+  local rank = {}
+  for i, buf in ipairs(M.terminal_order or {}) do rank[buf] = i end
+  table.sort(rows, function(a, b)
+    local ab, bb = a.neordr.buf or 0, b.neordr.buf or 0
+    local ar, br = rank[ab] or math.huge, rank[bb] or math.huge
+    return ar == br and ab < bb or ar < br
+  end)
+  local active = rows[1]
+  for _, row in ipairs(rows) do if row.focused then active = row end end
+  active.focused = true
+  for i, row in ipairs(rows) do
+    panes[#panes + 1] = row
+    tabs[#tabs + 1] = { tab_id = row.tab_id, workspace_id = ws, number = i,
+      label = row.label, focused = row.focused, pane_count = 1, agent_status = row.agent_status }
+  end
+  workspaces[1] = { workspace_id = ws, number = 1,
+    label = M.label or vim.fn.fnamemodify(M.cwd, ':t'), focused = true,
+    pane_count = #rows, tab_count = #rows, active_tab_id = active.tab_id, agent_status = 'unknown' }
   local layouts = array()
   for _, pane in ipairs(panes) do layouts[#layouts + 1] = pane_layout(pane) end
   M.last_snapshot = { panes = panes, tabs = tabs, workspaces = workspaces, layouts = layouts }
@@ -172,7 +171,7 @@ end
 
 local function find_workspace(id)
   if id == nil then return api.nvim_get_current_tabpage() end
-  for _, tab in ipairs(api.nvim_list_tabpages()) do if workspace(tab) == id then return tab end end
+  if workspace() == id then return api.nvim_get_current_tabpage() end
   fail('not_found', 'Unknown workspace')
 end
 
@@ -197,7 +196,7 @@ local function create(method, params)
     if params.workspace_id and params.workspace_id ~= target.workspace_id then fail('invalid_params', 'Target is in another workspace') end
     if M.create_terminal and not M.split_terminal then fail('invalid_request', 'Terminal plugin requires a split_terminal callback') end
   end
-  local parent = target and target.neordr.tabpage or find_workspace(method == 'workspace.create' and params.source_workspace_id or params.workspace_id)
+  local parent = target and target.neordr.tabpage or find_workspace(params.workspace_id)
   local cwd = params.cwd or (target and target.cwd) or vim.fn.getcwd(-1, api.nvim_tabpage_get_number(parent))
   if type(cwd) ~= 'string' or cwd:find('%z') or cwd == '' then fail('invalid_params', 'cwd must be a directory') end
   if cwd == '~' or cwd:sub(1, 2) == '~/' then cwd = vim.fn.expand('~') .. cwd:sub(2) end
@@ -217,15 +216,9 @@ local function create(method, params)
   for _, b in ipairs(api.nvim_list_bufs()) do before[b] = true end
   local before_wins = {}
   for _, w in ipairs(api.nvim_list_wins()) do before_wins[w] = true end
-  local created_tab, buf
+  local buf
   local ok, result = pcall(function()
     api.nvim_set_current_tabpage(parent)
-    if method == 'workspace.create' then
-      vim.cmd('tabnew')
-      created_tab = api.nvim_get_current_tabpage()
-      vim.cmd.tcd(vim.fn.fnameescape(cwd))
-      vim.t[created_tab].neordr_label = label
-    end
     if target then
       focus(target)
       local anchor = api.nvim_get_current_win()
@@ -263,15 +256,14 @@ local function create(method, params)
     local pane
     for _, p in ipairs(snap.panes) do if p.neordr.buf == buf then pane = p; break end end
     if not pane then fail('create_failed', 'Created terminal is not discoverable') end
-    local tab, ws
+    local tab
     for _, t in ipairs(snap.tabs) do if t.tab_id == pane.tab_id then tab = t end end
-    for _, w in ipairs(snap.workspaces) do if w.workspace_id == pane.workspace_id then ws = w end end
     if params.focus then focus(pane) end
     pane = vim.deepcopy(pane)
     pane.neordr = nil
-    return { type = method == 'pane.split' and 'pane_info' or method == 'workspace.create' and 'workspace_created' or 'tab_created',
+    return { type = method == 'pane.split' and 'pane_info' or 'tab_created',
       pane = method == 'pane.split' and pane or nil,
-      workspace = method == 'workspace.create' and ws or nil, tab = tab, root_pane = pane }
+      tab = tab, root_pane = pane }
   end)
   if not ok then
     -- Roll back only buffers and the tab allocated by this request.
@@ -288,10 +280,7 @@ local function create(method, params)
         if not before_wins[win] then pcall(api.nvim_win_close, win, true) end
       end
     end
-    if created_tab and api.nvim_tabpage_is_valid(created_tab) then
-      api.nvim_set_current_tabpage(created_tab)
-      pcall(vim.cmd, 'tabclose')
-    end
+
   end
   if (not ok or not params.focus) and api.nvim_win_is_valid(previous) then
     api.nvim_set_current_win(previous)
@@ -310,11 +299,7 @@ local function create(method, params)
         result.tab.focused = pane.focused
       end
     end
-    if result.workspace then
-      for _, ws in ipairs(snap.workspaces) do
-        if ws.workspace_id == result.workspace.workspace_id then result.workspace = ws end
-      end
-    end
+
   end
   if target then return { type = 'pane_info', pane = result.root_pane } end
   return result
@@ -331,20 +316,6 @@ local function move_item(items, source, index)
   return destination
 end
 
-local function move_workspace(params)
-  if type(params.workspace_id) ~= 'string' then fail('invalid_params', 'workspace_id is required') end
-  local target, tabs = find_workspace(params.workspace_id), api.nvim_list_tabpages()
-  local source
-  for i, tab in ipairs(tabs) do if tab == target then source = i end end
-  local destination = move_item(tabs, source, params.insert_index)
-  local previous = api.nvim_get_current_win()
-  api.nvim_set_current_tabpage(target)
-  -- :tabmove counts the tab after which to insert, with the same boundary semantics.
-  vim.cmd('tabmove ' .. (destination > source and destination or destination - 1))
-  if api.nvim_win_is_valid(previous) then api.nvim_set_current_win(previous) end
-  return { type = 'ok' }
-end
-
 local function move_terminal(params)
   if type(params.tab_id) ~= 'string' then fail('invalid_params', 'tab_id is required') end
   local pane = find_pane(params)
@@ -357,8 +328,15 @@ local function move_terminal(params)
   end
   if not source then fail('not_a_terminal', 'Editor panes cannot be reordered') end
   move_item(buffers, source, params.insert_index)
-  if M.reorder_terminals then M.reorder_terminals(buffers) end
-  vim.t[pane.neordr.tabpage].neordr_terminal_order = buffers
+  -- Integration callbacks order terminals in the current native tab only.
+  if M.reorder_terminals then
+    local local_buffers = {}
+    for _, buf in ipairs(buffers) do
+      if tab_of(buf) == api.nvim_get_current_tabpage() then local_buffers[#local_buffers + 1] = buf end
+    end
+    M.reorder_terminals(local_buffers)
+  end
+  M.terminal_order = buffers
   vim.cmd.redrawstatus()
   return { type = 'ok' }
 end
@@ -382,36 +360,13 @@ local function close_terminal(pane)
 end
 
 local function close(method, params)
-  local field = method == 'workspace.close' and 'workspace_id' or method == 'tab.close' and 'tab_id' or 'pane_id'
+  local field = method == 'tab.close' and 'tab_id' or 'pane_id'
   if type(params[field]) ~= 'string' then fail('invalid_params', field .. ' is required') end
-  if params.close_group then fail('invalid_params', 'Workspace groups are not supported') end
   local previous = api.nvim_get_current_win()
-  if method ~= 'workspace.close' then
-    local pane = find_pane(params)
-    if not pane.neordr.buf then fail('not_a_terminal', 'Editor panes cannot be closed as terminals') end
-    M.unzoom()
-    close_terminal(pane)
-  else
-    local target = find_workspace(params.workspace_id)
-    -- Refuse before stopping any jobs if closing this workspace could hide edits.
-    for _, win in ipairs(api.nvim_tabpage_list_wins(target)) do
-      local buf = api.nvim_win_get_buf(win)
-      if vim.bo[buf].buftype ~= 'terminal' and vim.bo[buf].modified then
-        fail('modified_buffer', 'Save modified editor buffers before closing this workspace')
-      end
-    end
-    local panes = M.snapshot().panes
-    M.unzoom()
-    -- Closing the final workspace leaves a fresh editor tab; never exit Neovim.
-    if #api.nvim_list_tabpages() == 1 then vim.cmd('tabnew') end
-    for _, pane in ipairs(panes) do
-      if pane.neordr.tabpage == target and pane.neordr.buf then close_terminal(pane) end
-    end
-    if api.nvim_tabpage_is_valid(target) then
-      api.nvim_set_current_tabpage(target)
-      vim.cmd('tabclose')
-    end
-  end
+  local pane = find_pane(params)
+  if not pane.neordr.buf then fail('not_a_terminal', 'Editor panes cannot be closed as terminals') end
+  M.unzoom()
+  close_terminal(pane)
   if api.nvim_win_is_valid(previous) then api.nvim_set_current_win(previous) end
   M.snapshot()
   return { type = 'ok' }
@@ -466,7 +421,7 @@ local function gesture(params)
   end
   if action == 'workspace_open' then
     close_navigator()
-    local rows, index = M.snapshot().workspaces, 1
+    local rows, index = params.workspaces or M.snapshot().workspaces, 1
     local lines = { ' Workspaces - arrows, Enter, Esc' }
     for i, ws in ipairs(rows) do
       lines[#lines + 1] = (' %d  %s'):format(i, ws.label)
@@ -491,11 +446,8 @@ local function gesture(params)
       local ws = nav.rows[nav.index].workspace_id
       close_navigator(owner)
       M.unzoom()
-      api.nvim_set_current_tabpage(find_workspace(ws))
-      for _, p in ipairs(M.snapshot().panes) do
-        if p.workspace_id == ws then focus(p); break end
-      end
-      resume_terminal()
+      -- The host switches remote UIs across editors after this input barrier.
+      return { type = 'ok', workspace_id = ws }
     else
       local delta = action == 'workspace_up' and -1 or 1
       nav.index = (nav.index - 1 + delta) % #nav.rows + 1
@@ -567,6 +519,7 @@ function M.gesture_key(key, typed)
       if pending.cancelled then return end
       local ok, result = pcall(gesture, pending)
       M.gesture_results[pending.owner] = { done = true, ok = ok,
+        workspace_id = ok and result.workspace_id or nil,
         message = not ok and (type(result) == 'table' and result.message or tostring(result)) or nil }
     end)
   end
@@ -594,21 +547,24 @@ local function dispatch(method, params)
   if method == 'neordr.gesture' then return gesture(params) end
   if method == 'neordr.gesture_prepare' then return prepare_gesture(params) end
   if method == 'neordr.gesture_result' then return M.gesture_results[params.owner] or { done = false } end
-  if method == 'workspace.create' or method == 'tab.create' or method == 'pane.split' then return create(method, params) end
-  if method == 'workspace.move' then return move_workspace(params) end
+  if method == 'tab.create' or method == 'pane.split' then return create(method, params) end
+  if method == 'workspace.move' then
+    find_workspace(params.workspace_id)
+    if params.insert_index ~= 0 and params.insert_index ~= 1 then fail('invalid_params', 'One workspace per editor') end
+    return { type = 'ok' }
+  end
   if method == 'tab.move' then return move_terminal(params) end
-  if method == 'workspace.close' or method == 'tab.close' or method == 'pane.close' then return close(method, params) end
+  if method == 'tab.close' or method == 'pane.close' then return close(method, params) end
   if method == 'workspace.rename' then
-    local tab = find_workspace(params.workspace_id)
-    vim.t[tab].neordr_label = label_param(params)
+    find_workspace(params.workspace_id)
+    M.label = label_param(params)
     return { type = 'ok' }
   end
   if method == 'workspace.focus' then
     M.unzoom()
-    for _, tab in ipairs(api.nvim_list_tabpages()) do
-      if workspace(tab) == params.workspace_id then api.nvim_set_current_tabpage(tab); return { type = 'ok' } end
-    end
-    fail('not_found', 'Unknown workspace')
+    find_workspace(params.workspace_id)
+    resume_terminal()
+    return { type = 'ok' }
   end
   local pane = find_pane(params)
   if method == 'pane.rename' or method == 'tab.rename' then

@@ -21,6 +21,25 @@ impl Drop for Process {
     }
 }
 
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        if let Ok(reply) = protocol::call(
+            &self.config.join("herdr/herdr.sock"),
+            &protocol::Request {
+                id: "cleanup".into(),
+                method: "ping".into(),
+                params: json!({}),
+            },
+        ) && reply["neordr_router"] == true
+            && let Some(pid) = reply["pid"].as_u64()
+        {
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
+            }
+        }
+    }
+}
+
 struct Fixture {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -384,7 +403,7 @@ fn discovery_checks_live_rpc_and_supports_custom_sockets() {
 #[test]
 fn herdr_list_shape_and_structured_unsupported_methods() {
     let fixture = Fixture::new();
-    assert_eq!(fixture.listed(), json!({"sessions": []}));
+    assert!(session::bridges(&fixture.config).unwrap().is_empty());
     let _bridge = fixture.bridge();
     let version = neordr::contracts::wire::PROTOCOL_VERSION;
     let ping = fixture.rpc("ping", json!({}));
@@ -417,9 +436,9 @@ fn herdr_list_shape_and_structured_unsupported_methods() {
     assert_eq!(
         fixture.listed(),
         json!({"sessions": [{
-            "name": "demo", "default": false, "running": true,
-            "socket_path": fixture.endpoint(),
-            "session_dir": fixture.endpoint().parent().unwrap(),
+            "name": "default", "default": true, "running": true,
+            "socket_path": fixture.config.join("herdr/herdr.sock"),
+            "session_dir": fixture.config.join("herdr"),
         }]})
     );
     let result = protocol::call(
@@ -462,7 +481,7 @@ fn registration_rejects_duplicate_and_changed_instances() {
         vec![],
     )
     .unwrap();
-    assert_eq!(fixture.listed(), json!({"sessions": []}));
+    assert!(session::bridges(&fixture.config).unwrap().is_empty());
     assert!(session::inspect_bridge(&fixture.endpoint()).is_err());
 }
 
@@ -472,7 +491,7 @@ fn dead_neovim_disappears_and_sigterm_removes_owned_socket() {
     let mut bridge = fixture.bridge();
     fixture.nvim.0.kill().unwrap();
     fixture.nvim.0.wait().unwrap();
-    assert_eq!(fixture.listed(), json!({"sessions": []}));
+    assert!(session::bridges(&fixture.config).unwrap().is_empty());
     assert!(
         Command::new("kill")
             .args(["-TERM", &bridge.0.id().to_string()])
@@ -555,9 +574,14 @@ fn herdr_symlink_translates_both_attach_forms_and_preserves_session_context() {
 
 #[test]
 fn invalid_names_cannot_escape_the_session_directory() {
-    for name in ["", "..", "../outside", "a/b", "default", "a b", "é"] {
+    for name in ["", "..", "../outside", "a/b", "a b", "é"] {
         assert!(session::socket_path(Path::new("/tmp/config"), name).is_err());
     }
+    assert!(session::validate_name("default").is_err());
+    assert_eq!(
+        session::socket_path(Path::new("/tmp/config"), "default").unwrap(),
+        Path::new("/tmp/config/herdr/herdr.sock")
+    );
     assert!(session::validate_name(&"x".repeat(65)).is_err());
     assert!(session::validate_name("nvim-project_1").is_ok());
 }
@@ -663,13 +687,13 @@ fn create_named_terminals_preserves_editor_and_uses_literal_cwd_and_environment(
     let cwd = fixture.root.join("project with ' quotes | and spaces");
     fs::create_dir(&cwd).unwrap();
     let created = fixture.rpc(
-        "workspace.create",
+        "tab.create",
         json!({"cwd":cwd,"label":"API","env":{"NEORDR_PROBE":"kept","HERDR_PANE_ID":"forged"}}),
     );
-    let ws = &created["workspace"]["workspace_id"];
+    let ws = &created["root_pane"]["workspace_id"];
     let pane = &created["root_pane"]["pane_id"];
-    assert_eq!(created["type"], "workspace_created");
-    assert_eq!(created["workspace"]["label"], "API");
+    assert_eq!(created["type"], "tab_created");
+    assert_eq!(created["tab"]["label"], "API");
     assert_eq!(created["root_pane"]["cwd"], cwd.to_str().unwrap());
     assert_eq!(
         nvim::exec_lua(
@@ -699,7 +723,7 @@ fn create_named_terminals_preserves_editor_and_uses_literal_cwd_and_environment(
     );
     let terminal = fixture.rpc(
         "tab.create",
-        json!({"workspace_id":ws,"label":"Tests","focus":true}),
+        json!({"workspace_id":ws,"cwd":cwd,"label":"Tests","focus":true}),
     );
     assert_eq!(terminal["type"], "tab_created");
     assert_eq!(terminal["root_pane"]["cwd"], cwd.to_str().unwrap());
@@ -755,7 +779,7 @@ fn default_creation_uses_selection_and_launch_does_not_allow_arbitrary_shell_inp
         )
     };
     assert!(
-        request("workspace.create", json!({"cwd":first.root}))
+        request("tab.create", json!({"cwd":first.root}))
             .get("error")
             .is_some()
     );
@@ -763,7 +787,7 @@ fn default_creation_uses_selection_and_launch_does_not_allow_arbitrary_shell_inp
     request("workspace.focus", json!({"workspace_id":ws}));
     nvim::exec_lua(&second.socket, "vim.o.shell='/bin/sh'; return true", vec![]).unwrap();
     let created = request(
-        "workspace.create",
+        "tab.create",
         json!({"cwd":second.root,"label":"Remote","focus":true}),
     );
     assert!(created.get("error").is_none(), "{created}");
@@ -809,7 +833,7 @@ fn default_creation_uses_selection_and_launch_does_not_allow_arbitrary_shell_inp
     nvim::exec_lua(&second.socket,"require('neordr.backend').create_terminal=function() error('adapter failed') end;return true",vec![]).unwrap();
     let before = second.rpc("workspace.list", json!({}));
     assert!(
-        request("workspace.create", json!({"cwd":second.root}))
+        request("tab.create", json!({"cwd":second.root}))
             .get("error")
             .is_some()
     );
@@ -1146,7 +1170,7 @@ fn move_and_close_terminals_keep_surviving_jobs_and_editor_buffers() {
 }
 
 #[test]
-fn workspace_close_preflights_edits_and_never_exits_the_last_editor() {
+fn workspace_close_preflights_edits_and_exits_even_an_adopted_editor() {
     let fixture = Fixture::new();
     let _bridge = fixture.bridge();
     let term = fixture.terminal("codex");
@@ -1172,14 +1196,9 @@ fn workspace_close_preflights_edits_and_never_exits_the_last_editor() {
     .unwrap();
     let reply = neordr::router::dispatch(&fixture.config, &request);
     assert!(reply.get("error").is_none(), "{reply}");
-    assert!(nvim::inspect(&fixture.socket).is_ok());
-    let after = fixture.rpc("workspace.list", json!({}));
-    assert_eq!(after["workspaces"].as_array().unwrap().len(), 1);
-    assert_ne!(after["workspaces"][0]["workspace_id"], ws);
-    assert_eq!(
-        neordr::router::dispatch(&fixture.config, &request)["error"]["code"],
-        "not_found"
-    );
+    wait_for(|| !fixture.socket.exists());
+    assert!(nvim::inspect(&fixture.socket).is_err());
+    assert!(session::bridges(&fixture.config).unwrap().is_empty());
 }
 
 #[test]
@@ -1212,7 +1231,7 @@ fn workspace_order_spans_editors_and_preserves_ids_and_focus() {
             .collect::<Vec<_>>()
     };
     let original = list();
-    assert_eq!(original.len(), 4);
+    assert_eq!(original.len(), 2);
     let focus = nvim::exec_lua(
         &first.socket,
         "return vim.api.nvim_get_current_tabpage()",
@@ -1221,18 +1240,10 @@ fn workspace_order_spans_editors_and_preserves_ids_and_focus() {
     .unwrap();
     let reply = request(
         "workspace.move",
-        json!({"workspace_id":original[0],"insert_index":4}),
+        json!({"workspace_id":original[0],"insert_index":2}),
     );
     assert!(reply.get("error").is_none(), "{reply}");
-    assert_eq!(
-        list(),
-        vec![
-            original[1].clone(),
-            original[2].clone(),
-            original[3].clone(),
-            original[0].clone()
-        ]
-    );
+    assert_eq!(list(), vec![original[1].clone(), original[0].clone()]);
     assert_eq!(
         nvim::exec_lua(
             &first.socket,
@@ -1243,12 +1254,12 @@ fn workspace_order_spans_editors_and_preserves_ids_and_focus() {
         focus
     );
     assert_eq!(
-        first.rpc("workspace.list", json!({}))["workspaces"][1]["workspace_id"],
+        first.rpc("workspace.list", json!({}))["workspaces"][0]["workspace_id"],
         original[0]
     );
     let snapshot = request("session.snapshot", json!({}));
     assert_eq!(
-        snapshot["result"]["snapshot"]["workspaces"][3]["workspace_id"],
+        snapshot["result"]["snapshot"]["workspaces"][1]["workspace_id"],
         original[0]
     );
     let reply = request(

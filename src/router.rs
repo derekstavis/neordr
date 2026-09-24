@@ -56,7 +56,14 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
             result: ResponseResult::Pong {
                 version: concat!("neordr/", env!("CARGO_PKG_VERSION")).into(),
                 protocol: crate::contracts::wire::PROTOCOL_VERSION,
-                capabilities: None,
+                capabilities: Some(crate::contracts::api::ServerCapabilities {
+                    endpoint_protocol_generation: Some(1),
+                    live_handoff: false,
+                    detached_server_daemon: false,
+                    surface_interest: false,
+                    health_check: false,
+                    ssh_agent_registration: false,
+                }),
             },
             identity: api::Identity {
                 neordr_router: Some(true),
@@ -64,6 +71,31 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
                 ..Default::default()
             },
         });
+    }
+    if let ApiCommand::Herdr(Method::WorkspaceCreate(params)) = &request.command {
+        let source_key = match params.source_workspace_id.as_deref() {
+            Some(id) => Some(
+                id.split_once(':')
+                    .context("invalid source workspace ID")?
+                    .0
+                    .to_owned(),
+            ),
+            None => crate::selection::current(config)?,
+        };
+        let source = source_key
+            .as_deref()
+            .map(|key| session::inspect_bridge(&session::socket_path(config, key)?))
+            .transpose()?;
+        if let (Some(id), Some(instance)) = (&params.source_workspace_id, &source) {
+            ensure!(
+                crate::backend::snapshot(instance)?
+                    .workspaces
+                    .iter()
+                    .any(|w| w.workspace_id == *id),
+                "unknown source workspace"
+            );
+        }
+        return crate::editors::create(config, params, source.as_ref());
     }
     if let ApiCommand::Herdr(Method::WorkspaceMove(params)) = &request.command {
         return crate::ordering::move_workspace(config, &request.id, params);
@@ -124,14 +156,11 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         }
         return Ok(reply);
     }
-    if matches!(
-        &request.command,
-        ApiCommand::Herdr(Method::WorkspaceCreate(_) | Method::TabCreate(_))
-    ) {
+    if matches!(&request.command, ApiCommand::Herdr(Method::TabCreate(_))) {
         let name = if let Some(name) = crate::selection::current(config)? {
             name
         } else {
-            let sessions = session::list(config)?;
+            let sessions = session::bridges(config)?;
             ensure!(
                 sessions.len() == 1,
                 "select a Neovim workspace in Moshi before creating a terminal"
@@ -148,14 +177,33 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         &request.command,
         ApiCommand::Herdr(Method::SessionSnapshot(_))
     ) {
-        let sessions = session::list(config)?;
-        let selected = crate::selection::current(config)?;
+        let sessions = session::bridges(config)?;
+        let selected =
+            crate::selection::current(config)?.or_else(|| sessions.first().map(|s| s.name.clone()));
         let mut snapshot = crate::backend::empty_session_snapshot();
         for item in &sessions {
-            let reply = protocol::call_typed(&item.socket_path, request)?;
+            let reply = match protocol::call_typed(&item.socket_path, request) {
+                Ok(reply) => reply,
+                Err(_) if session::inspect_bridge(&item.socket_path).is_err() => continue,
+                Err(error) => return Err(error),
+            };
             let ResponseResult::SessionSnapshot { snapshot: source } = reply.result else {
                 anyhow::bail!("invalid session snapshot");
             };
+            let mut source = source;
+            let focused = selected.as_deref() == Some(&item.name);
+            for ws in &mut source.workspaces {
+                ws.focused &= focused;
+            }
+            for tab in &mut source.tabs {
+                tab.focused &= focused;
+            }
+            for pane in &mut source.panes {
+                pane.focused &= focused;
+            }
+            for agent in &mut source.agents {
+                agent.focused &= focused;
+            }
             snapshot.workspaces.extend(source.workspaces);
             snapshot.tabs.extend(source.tabs);
             snapshot.panes.extend(source.panes);
@@ -173,44 +221,40 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         }
         .into());
     }
-    let mut aggregate = match &request.command {
-        ApiCommand::Herdr(Method::WorkspaceList(_)) => {
-            ResponseResult::WorkspaceList { workspaces: vec![] }
+    let snapshot_request = api::request(
+        &request.id,
+        Method::SessionSnapshot(crate::contracts::api::EmptyParams {}),
+    );
+    let result = match &request.command {
+        ApiCommand::Herdr(
+            Method::WorkspaceList(_)
+            | Method::TabList(_)
+            | Method::PaneList(_)
+            | Method::AgentList(_),
+        ) => {
+            let ResponseResult::SessionSnapshot { snapshot } =
+                execute(config, &snapshot_request)?.result
+            else {
+                unreachable!()
+            };
+            match &request.command {
+                ApiCommand::Herdr(Method::WorkspaceList(_)) => ResponseResult::WorkspaceList {
+                    workspaces: snapshot.workspaces,
+                },
+                ApiCommand::Herdr(Method::TabList(_)) => ResponseResult::TabList {
+                    tabs: snapshot.tabs,
+                },
+                ApiCommand::Herdr(Method::PaneList(_)) => ResponseResult::PaneList {
+                    panes: snapshot.panes,
+                },
+                _ => ResponseResult::AgentList {
+                    agents: snapshot.agents,
+                },
+            }
         }
-        ApiCommand::Herdr(Method::TabList(_)) => ResponseResult::TabList { tabs: vec![] },
-        ApiCommand::Herdr(Method::PaneList(_)) => ResponseResult::PaneList { panes: vec![] },
-        ApiCommand::Herdr(Method::AgentList(_)) => ResponseResult::AgentList { agents: vec![] },
-        _ => {
-            return Err(protocol::RemoteError(crate::contracts::api::ErrorBody {
-                code: "invalid_request".into(),
-                message: "method needs an explicit target or is unsupported".into(),
-            })
-            .into());
-        }
+        _ => anyhow::bail!("method needs an explicit target or is unsupported"),
     };
-    for item in session::list(config)? {
-        let reply = protocol::call_typed(&item.socket_path, request)?;
-        match (&mut aggregate, reply.result) {
-            (
-                ResponseResult::WorkspaceList { workspaces },
-                ResponseResult::WorkspaceList { workspaces: rows },
-            ) => workspaces.extend(rows),
-            (ResponseResult::TabList { tabs }, ResponseResult::TabList { tabs: rows }) => {
-                tabs.extend(rows)
-            }
-            (ResponseResult::PaneList { panes }, ResponseResult::PaneList { panes: rows }) => {
-                panes.extend(rows)
-            }
-            (ResponseResult::AgentList { agents }, ResponseResult::AgentList { agents: rows }) => {
-                agents.extend(rows)
-            }
-            _ => anyhow::bail!("invalid list response"),
-        }
-    }
-    if let ResponseResult::WorkspaceList { workspaces } = &mut aggregate {
-        crate::ordering::sort(config, workspaces)?;
-    }
-    Ok(aggregate.into())
+    Ok(result.into())
 }
 
 fn router_ready(config: &Path) -> Result<()> {
@@ -238,6 +282,7 @@ pub fn start_background(config: &Path) -> Result<()> {
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("router")
+        .env("XDG_CONFIG_HOME", config)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -254,6 +299,9 @@ pub fn start_background(config: &Path) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         if router_ready(config).is_ok() {
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
             return Ok(());
         }
         if let Some(status) = child.try_wait()? {
@@ -283,6 +331,7 @@ pub fn serve(config: &Path) -> Result<()> {
     }
     let path = root.join("herdr.sock");
     let marker = root.join(".neordr-router-owned");
+    let previously_owned = marker.exists();
     if path.symlink_metadata().is_ok() {
         if let Ok(result) = protocol::call_typed(
             &path,
@@ -308,16 +357,64 @@ pub fn serve(config: &Path) -> Result<()> {
     let listener = UnixListener::bind(&path)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     fs::write(
-        marker,
+        &marker,
         "Neordr owns the default API socket; the named session servers own Neovim instances.\n",
     )?;
+    let client_path = root.join("herdr-client.sock");
+    if client_path.exists() {
+        ensure!(
+            previously_owned
+                && fs::symlink_metadata(&client_path)?.file_type().is_socket()
+                && std::os::unix::net::UnixStream::connect(&client_path).is_err(),
+            "client socket already in use"
+        );
+        fs::remove_file(&client_path)?;
+    }
+    let clients = UnixListener::bind(&client_path)?;
+    fs::set_permissions(&client_path, fs::Permissions::from_mode(0o600))?;
+    clients.set_nonblocking(true)?;
+    let active_clients = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
     let signal = stop.clone();
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
     listener.set_nonblocking(true)?;
     let active = Arc::new(AtomicUsize::new(0));
-    eprintln!("neordr router listening on {}", path.display());
+    let discover_config = config.to_owned();
+    let discover_stop = stop.clone();
+    thread::spawn(move || {
+        while !discover_stop.load(Ordering::Relaxed) {
+            let _ = crate::editors::discover(&discover_config);
+            for _ in 0..50 {
+                if discover_stop.load(Ordering::Relaxed) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    });
+    eprintln!("neordr session listening on {}", path.display());
     while !stop.load(Ordering::Relaxed) {
+        match clients.accept() {
+            Ok((stream, _)) if active_clients.load(Ordering::Relaxed) < 8 => {
+                active_clients.fetch_add(1, Ordering::Relaxed);
+                let count = active_clients.clone();
+                let stop = stop.clone();
+                let config = config.to_owned();
+                thread::spawn(move || {
+                    if let Err(error) = crate::endpoint::handle(
+                        stream,
+                        crate::endpoint::Target::Session(config),
+                        stop,
+                    ) {
+                        eprintln!("Herdr session endpoint: {error:#}");
+                    }
+                    count.fetch_sub(1, Ordering::Relaxed);
+                });
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e.into()),
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
                 // A partial request or a paused editor must not block router
@@ -349,5 +446,6 @@ pub fn serve(config: &Path) -> Result<()> {
         }
     }
     fs::remove_file(path)?;
+    fs::remove_file(client_path)?;
     Ok(())
 }

@@ -76,7 +76,7 @@ def main():
             script = fast_script(root)
             os.write(reference_master, b":lua error('HERDR-ATTACH-ERROR')\r")
             eventually(lambda: fast(env, address, script, 'return vim.api.nvim_get_mode().mode') == 'r')
-            client = subprocess.Popen([str(HERDR),'--session','test'],env=env,stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
+            client = subprocess.Popen([str(HERDR),'--session','default'],env=env,stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
             children.append(client)
             eventually(lambda: b'NEORDR-EDITOR-MARKER' in output, seconds=15)
             assert client.poll() is None
@@ -94,6 +94,8 @@ def main():
             os.write(master,b'\x02p')
             eventually(lambda: next(p['pane_id'] for p in rpc(endpoint,'pane.list')['panes'] if p['focused']) == first['pane_id'])
             eventually(lambda: evaluate('return vim.api.nvim_get_mode().mode') == 't')
+            # The client must consume the new projection before targeting fresh input.
+            time.sleep(.6)
             os.write(master,b"printf '\\nHERDR-INPUT-OK\\n'\r")
             eventually(lambda: 'HERDR-INPUT-OK' in rpc(endpoint,'pane.read',{'pane_id':first['pane_id'],'source':'recent'})['read']['text'].splitlines())
             captures = check_tui_ordering(root, endpoint, master, evaluate, panes)
@@ -106,8 +108,8 @@ def main():
             eventually(lambda: evaluate('return vim.o.columns') == '160')
             assert editor.poll() is None
             assert evaluate("local r={}; for _,p in ipairs(require('neordr.backend').snapshot().panes) do r[p.pane_id]=p.neordr.shell_pid end; return vim.json.encode(r)") == before
-            check_native_ordering(root, endpoint, evaluate, panes, captures, reference_master, reference_output, env, log, children)
-            client = subprocess.Popen([str(HERDR),'--session','test'],env=env,stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
+            check_native_ordering(root, root/'config/herdr/herdr.sock', evaluate, panes, captures, reference_master, reference_output, env, log, children)
+            client = subprocess.Popen([str(HERDR),'--session','default'],env=env,stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
             children.append(client)
             eventually(lambda: evaluate('return #vim.api.nvim_list_uis()') == '2')
             client.kill(); client.wait(timeout=5)

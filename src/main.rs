@@ -1,5 +1,4 @@
 use std::{
-    io::{self, IsTerminal, Write},
     path::PathBuf,
     process::{Command, ExitCode},
 };
@@ -109,42 +108,14 @@ enum Sessions {
     },
 }
 
-fn default_session(config: &std::path::Path) -> Result<String> {
+fn default_workspace(config: &std::path::Path) -> Result<String> {
     if let Some(name) = selection::current(config)? {
         return Ok(name);
     }
-    let sessions = session::list(config)?;
-    anyhow::ensure!(
-        !sessions.is_empty(),
-        "no running Neovim sessions; start Neovim with the Neordr integration"
-    );
-    if sessions.len() == 1 {
-        return Ok(sessions[0].name.clone());
-    }
-    anyhow::ensure!(
-        io::stdin().is_terminal(),
-        "multiple sessions: select one in Moshi or pass --session <name>"
-    );
-    println!("Choose a Neovim session:");
-    for (i, item) in sessions.iter().enumerate() {
-        println!("  {}. {}", i + 1, item.name);
-    }
-    loop {
-        print!("Session number: ");
-        io::stdout().flush()?;
-        let mut line = String::new();
-        anyhow::ensure!(
-            io::stdin().read_line(&mut line)? != 0,
-            "session selection cancelled"
-        );
-        if let Ok(index) = line.trim().parse::<usize>()
-            && let Some(item) = index.checked_sub(1).and_then(|index| sessions.get(index))
-        {
-            selection::remember(config, &item.name)?;
-            return Ok(item.name.clone());
-        }
-        println!("Enter a number from 1 to {}.", sessions.len());
-    }
+    session::bridges(config)?
+        .first()
+        .map(|s| s.name.clone())
+        .context("no running Neovim workspaces; create a workspace before attaching")
 }
 
 fn run() -> Result<i32> {
@@ -194,11 +165,13 @@ fn run() -> Result<i32> {
         Some(Commands::Discover { .. }) => unreachable!(),
         Some(Commands::Serve { nvim }) => {
             let name = cli.session.context("serve requires --session <name>")?;
+            session::validate_name(&name)?;
             server::serve(&session::socket_path(&config, &name)?, &nvim)?;
         }
         Some(Commands::Session {
             command: Sessions::List { json },
         }) => {
+            router::start_background(&config)?;
             let sessions = session::list(&config)?;
             if json {
                 println!(
@@ -223,7 +196,10 @@ fn run() -> Result<i32> {
             return Ok(status.code().unwrap_or(1));
         }
         Some(Commands::Rpc { method, params }) => {
-            let name = cli.session.context("rpc requires --session <name>")?;
+            let name = cli.session.unwrap_or_else(|| "default".into());
+            if name == "default" {
+                router::start_background(&config)?;
+            }
             let params: Value = serde_json::from_str(&params)?;
             let result = protocol::call(
                 &session::socket_path(&config, &name)?,
@@ -237,8 +213,11 @@ fn run() -> Result<i32> {
         }
         None => {
             return match cli.session {
-                Some(name) => attach::run(&config, name, false),
-                None => attach::run(&config, default_session(&config)?, true),
+                Some(name) if name != "default" => attach::run(&config, name, false),
+                _ => {
+                    router::start_background(&config)?;
+                    attach::run(&config, default_workspace(&config)?, true)
+                }
             };
         }
     }

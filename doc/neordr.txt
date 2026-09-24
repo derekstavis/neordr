@@ -1,6 +1,6 @@
 *neordr.txt*           Neovim sessions for Moshi and Herdr
 
-Neordr turns each Neovim editor into a Herdr-compatible session. Neovim owns the
+Neordr groups Neovim editor workspaces in one Herdr-compatible default session. Neovim owns the
 editor layout and terminal jobs; remote clients attach to the full editor.
 
 This help describes the development plugin. Help and health checks were added
@@ -95,7 +95,7 @@ bin                                                       *neordr-option-bin*
     checks that the binary reports exactly the plugin's expected version.
 
 session                                               *neordr-option-session*
-    Optional explicit session name. By default, Neordr generates a name from
+    Optional internal bridge name (legacy option name). By default, Neordr generates a name from
     the editor's initial directory and process identity. Names should be
     unique between editors. Allowed names contain 1-64 ASCII letters, digits,
     hyphens, or underscores; "default" is reserved. Automatic names are normally
@@ -140,10 +140,14 @@ COMMANDS                                                       *neordr-commands*
 
 Once setup succeeds, use these shell commands to find and attach to an editor: >sh
     neordr session list --json
-    neordr session attach SESSION_NAME
+    neordr session attach default
 <
 Detach with Ctrl-B, q or Neovim's :detach. The editor and jobs remain running.
-Quitting Neovim ends the editor and its terminal jobs.
+Quitting Neovim or explicitly closing its workspace ends the editor and its jobs.
+Workspace close refuses modified editor buffers, including hidden ones. Native
+Neovim tabpages are not separate workspaces. Remote workspace creation launches
+a detached headless editor with your configuration and a shell. Neordr server
+exit does not stop those editors; restart recovers them.
 
 ==============================================================================
 TERMINAL ADAPTERS                                               *neordr-adapters*

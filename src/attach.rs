@@ -14,7 +14,7 @@ use std::{
         fd::{AsRawFd, FromRawFd},
         unix::process::CommandExt,
     },
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
         Arc,
@@ -55,9 +55,10 @@ struct Ui {
     master: File,
     instance: Instance,
     owner: String,
+    session_config: Option<PathBuf>,
 }
 impl Ui {
-    fn start(config: &Path, name: &str) -> Result<Self> {
+    fn start(config: &Path, name: &str, follow_selection: bool) -> Result<Self> {
         let instance = session::inspect_bridge(&session::socket_path(config, name)?)?;
         crate::nvim::prepare_attach(&instance)?;
         let (mut master, mut slave) = (-1, -1);
@@ -110,15 +111,38 @@ impl Ui {
             master,
             instance,
             owner,
+            session_config: follow_selection.then(|| config.to_owned()),
         })
     }
 
-    fn action(&mut self, action: &str, index: Option<u8>) -> Result<()> {
+    fn action(&mut self, action: &str, index: Option<u8>) -> Result<Option<String>> {
+        let workspaces = if action == "workspace_open" {
+            self.session_config
+                .as_ref()
+                .map(|config| -> Result<_> {
+                    let request = crate::api::request(
+                        "gesture:workspaces",
+                        crate::contracts::api::Method::WorkspaceList(
+                            crate::contracts::api::EmptyParams {},
+                        ),
+                    );
+                    let ResponseResult::WorkspaceList { workspaces } =
+                        crate::router::execute(config, &request)?.result
+                    else {
+                        anyhow::bail!("invalid workspace list")
+                    };
+                    Ok(workspaces)
+                })
+                .transpose()?
+        } else {
+            None
+        };
         let reply: backend::Marker = backend::internal(
             &self.instance,
             &backend::Internal::GesturePrepare(backend::GestureParams {
                 action: action.into(),
                 index,
+                workspaces,
                 owner: self.owner.clone(),
             }),
         )?;
@@ -155,7 +179,7 @@ impl Ui {
                     "gesture failed: {}",
                     reply.message.as_deref().unwrap_or("unknown failure")
                 );
-                return Ok(());
+                return Ok(reply.workspace_id);
             }
             ensure!(
                 Instant::now() < deadline,
@@ -172,6 +196,7 @@ impl Drop for Ui {
                 action: "cleanup".into(),
                 owner: self.owner.clone(),
                 index: None,
+                workspaces: None,
             }),
         );
         if matches!(self.child.try_wait(), Ok(None)) {
@@ -205,13 +230,27 @@ fn dimensions() -> Result<libc::winsize> {
     Ok(size)
 }
 
+fn remaining_editor(config: &Path, current: &str) -> Result<Option<String>> {
+    // A UI can exit because the editor closed or because the user detached.
+    // Reattach only when that editor is gone, never undo an ordinary detach.
+    if session::inspect_bridge(&session::socket_path(config, current)?).is_ok() {
+        return Ok(None);
+    }
+    Ok(selection::current(config)?.or_else(|| {
+        session::bridges(config)
+            .ok()?
+            .first()
+            .map(|s| s.name.clone())
+    }))
+}
+
 pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i32> {
     let stopped = Arc::new(AtomicBool::new(false));
     let signal = stopped.clone();
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
     let _terminal = Terminal::raw()?;
     loop {
-        let mut ui = Ui::start(config, &name)?;
+        let mut ui = Ui::start(config, &name, follow_selection)?;
         let mut decoder = Decoder::default();
         let mut next_check = Instant::now();
         let mut size = dimensions()?;
@@ -220,6 +259,10 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
                 return Ok(0);
             }
             if let Some(status) = ui.child.try_wait()? {
+                if follow_selection && let Some(next) = remaining_editor(config, &name)? {
+                    name = next;
+                    break;
+                }
                 return Ok(status.code().unwrap_or(1));
             }
             if Instant::now() >= next_check {
@@ -263,12 +306,24 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
             let mut buffer = [0u8; 16384];
             if fds[1].revents & libc::POLLIN != 0 {
                 match ui.master.read(&mut buffer) {
-                    Ok(0) => return Ok(0),
+                    Ok(0) => {
+                        if follow_selection && let Some(next) = remaining_editor(config, &name)? {
+                            name = next;
+                            break;
+                        }
+                        return Ok(0);
+                    }
                     Ok(n) => {
                         io::stdout().write_all(&buffer[..n])?;
                         io::stdout().flush()?;
                     }
-                    Err(e) if e.raw_os_error() == Some(libc::EIO) => return Ok(0),
+                    Err(e) if e.raw_os_error() == Some(libc::EIO) => {
+                        if follow_selection && let Some(next) = remaining_editor(config, &name)? {
+                            name = next;
+                            break;
+                        }
+                        return Ok(0);
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -297,7 +352,27 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
                 };
                 // If ordering cannot be established, detach rather than send
                 // subsequent text to a possibly different terminal.
-                result.context("remote gesture")?;
+                if let Some(workspace) = result.context("remote gesture")?
+                    && follow_selection
+                {
+                    crate::router::execute(
+                        config,
+                        &crate::api::request(
+                            "gesture:focus",
+                            crate::contracts::api::Method::WorkspaceFocus(
+                                crate::contracts::api::WorkspaceTarget {
+                                    workspace_id: workspace.clone(),
+                                },
+                            ),
+                        ),
+                    )?;
+                    let selected = workspace.split_once(':').context("invalid workspace ID")?.0;
+                    if selected != name {
+                        name = selected.to_owned();
+                        drop(ui);
+                        ui = Ui::start(config, &name, follow_selection)?;
+                    }
+                }
             }
             if fds
                 .iter()

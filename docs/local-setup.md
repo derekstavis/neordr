@@ -5,38 +5,45 @@ start with [installation](installation.md).
 
 ## Session and terminal model
 
-Each integrated Neovim process has a named bridge. Neovim tabpages become
-workspaces; each managed terminal buffer becomes a virtual Herdr tab with one
-pane. Selecting a terminal in Moshi or Herdr focuses that buffer in input mode.
-The full editor remains visible, including file buffers and other splits.
+The default session groups all discovered Neovim editors. One editor process is
+one workspace; native Neovim tabpages remain editor layout. Each managed terminal
+buffer becomes a virtual Herdr tab with one pane. Selecting it focuses the
+buffer in input mode, including terminals in other native tabpages. The complete
+editor remains visible.
 
-A new workspace opens a Neovim tabpage. A new terminal uses the configured
-terminal adapter, or a shell split when no adapter is configured. Splitting
-right or down creates an adjacent Neovim terminal window; the two jobs remain
-separate sidebar entries. Closing one preserves the other jobs and file buffers.
-Closing a workspace rejects visible modified editor buffers before stopping
-jobs. Closing the last workspace leaves a fresh editor tab.
+Creating a workspace launches a detached headless Neovim in the requested
+absolute directory, loads your normal configuration, and starts an initial
+shell through your terminal adapter. Several workspaces may use the same folder.
+Editors survive both client detach and Neordr server exits. Explicitly closing
+a workspace quits its editor and stops its jobs, whether headless or opened
+locally. All modified nonterminal buffers, including hidden ones, must be saved
+first. There is currently no forced-discard API. Closing the last workspace
+leaves the default session available for creation through Herdr or Moshi.
 
-Bare `herdr` (the Neordr alias) follows the last successfully focused editor.
-If none is selected, it attaches to the only live session or presents a numbered
-picker when several are running. Later sidebar focus changes can move this
-default attachment between editors. Explicit `--session` attachments remain
-pinned to their editor. Default attachments share focus, including across
-browser connections.
+A new terminal uses the configured adapter, or a shell split without one.
+Splitting right or down opens an adjacent terminal window; jobs remain separate
+sidebar entries. Closing a terminal preserves the other jobs and file buffers.
 
-Useful commands:
+Bare `herdr` (the Neordr alias) and `--session default` follow the selected editor,
+or the first available workspace. The workspace gesture picker switches across
+editors. Focus and layout are shared between clients. Legacy per-editor names
+remain usable with `--session NAME` for pinned attachment, but no longer appear
+as separate sessions in the picker. Named groups are not implemented yet.
 
 ```sh
 neordr session list --json
 neordr discover --json
-neordr session attach SESSION_NAME
-neordr --session SESSION_NAME rpc session.snapshot
-neordr --session SESSION_NAME rpc agent.list
-neordr --session SESSION_NAME rpc pane.list
+neordr session attach default
+neordr --session default rpc session.snapshot
+neordr --session default rpc workspace.create --params '{"cwd":"/absolute/project","focus":true}'
+neordr --session default rpc agent.list
 ```
 
-Discovery validates live Neovim RPC sockets. Only editors with active bridges
-appear in the Herdr session list. `:NeordrStatus` shows the current name and socket.
+The session server periodically scans normal Neovim sockets in its configuration
+namespace and recovers recorded editors after restart. Custom sockets need plugin
+registration or an explicit `serve --nvim` bridge. Recovery checks both PID and
+editor generation. `:NeordrStatus` shows the editor's internal bridge name and
+socket. It is not a separately listed session.
 
 ## Plugin diagnostics
 
@@ -69,7 +76,7 @@ to change font size or switch connections continues to perform that action.
 | --- | --- | --- |
 | Next / previous terminal | Ctrl-B, `n` / `p` | Cycle terminal buffers in this workspace, including hidden ones. |
 | Next / previous pane | Ctrl-B, Tab / Shift-Tab | Cycle visible Neovim splits, including file windows. |
-| Next / previous workspace | Ctrl-B, `w`, Down / Up, Enter | Choose another Neovim tabpage. |
+| Next / previous workspace | Ctrl-B, `w`, Down / Up, Enter | Attach to another editor workspace. |
 | Zoom | Ctrl-B, `z` | Toggle a full-size floating view of the focused buffer. |
 | New terminal | Ctrl-B, `c` | Create a terminal through the configured adapter. |
 | Numbered terminal | Ctrl-B, `1`–`9` | Select a virtual terminal tab. |

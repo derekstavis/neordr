@@ -68,7 +68,13 @@ pub fn read_frame(reader: &mut impl BufRead) -> Result<Vec<u8>> {
 
 pub fn call(socket: &Path, request: &Request) -> Result<Value> {
     let mut stream = UnixStream::connect(socket)?;
-    stream.set_read_timeout(Some(Duration::from_millis(1000)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(
+        if request.method == "workspace.create" {
+            15
+        } else {
+            3
+        },
+    )))?;
     stream.set_write_timeout(Some(Duration::from_millis(1000)))?;
     serde_json::to_writer(&mut stream, request)?;
     stream.write_all(b"\n")?;
@@ -83,7 +89,13 @@ pub fn call(socket: &Path, request: &Request) -> Result<Value> {
 /// Typed application RPC; raw requests above exist only for CLI/compatibility edges.
 pub fn call_typed(socket: &Path, request: &crate::api::Request) -> Result<crate::api::Reply> {
     let mut stream = UnixStream::connect(socket)?;
-    stream.set_read_timeout(Some(Duration::from_millis(1000)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(
+        if request.command.name() == "workspace.create" {
+            15
+        } else {
+            3
+        },
+    )))?;
     stream.set_write_timeout(Some(Duration::from_millis(1000)))?;
     serde_json::to_writer(&mut stream, request)?;
     stream.write_all(b"\n")?;

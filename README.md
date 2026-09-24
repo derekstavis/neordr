@@ -72,7 +72,7 @@ shell command. In another terminal:
 
 ```sh
 neordr session list
-neordr session attach SESSION_NAME
+neordr session attach default
 ```
 
 Detach with **Ctrl-B, q** or Neovim's `:detach`; the editor and jobs continue
@@ -89,14 +89,20 @@ so their process environment carries the correct session identity.
 flowchart LR
   M[Moshi and moshi-hook] --> R[Neordr session router]
   R --> B[Per-editor bridge]
-  H[Herdr interactive client] --> B
+  H[Herdr interactive client] --> R
   B --> N[Neovim RPC and remote UI]
   N --> E[Editor buffers]
   N --> T[Terminal jobs: shells, Claude, Codex]
 ```
 
-Neovim owns editor state, terminal processes, and rendering. Neordr maps Neovim
-tabpages to workspaces and terminal buffers to virtual Herdr tabs and panes.
+Neovim owns editor state, terminal processes, and rendering. The default session
+groups editors: each Neovim process is one workspace, and terminal buffers become
+virtual Herdr tabs and panes. Native Neovim tabs remain ordinary editor layout.
+Creating a workspace launches a detached headless editor in its directory,
+loading your Neovim configuration. Several workspaces can use the same directory.
+Closing a workspace exits its editor and jobs, including editors opened locally;
+modified file buffers must be saved first. Disconnecting a client or stopping
+Neordr leaves editors running.
 Moshi reads the agents' own transcripts; Neordr does not parse conversations or
 run a model.
 
@@ -112,7 +118,7 @@ See [contract generation](build_support/README.md) and the
 | Area | Current behavior |
 | --- | --- |
 | Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Hook compatibility tested with 0.3.21 and 0.3.26. |
-| Herdr interactive UI | A named Neordr session; full editor rendering, terminal selection, creation, input, resizing, and detach. [Compatibility details](docs/herdr-interface.md). |
+| Herdr interactive UI | The default session groups editor workspaces; full editor rendering, terminal selection, creation, input, resizing, and detach. [Compatibility details](docs/herdr-interface.md). |
 | Multiple clients | All clients share Neovim's focus and layout. The smallest attached UI constrains the editor size. |
 | Agent status | Foreground Claude/Codex detection; activity status remains `unknown`. |
 | Capture | Visible and bounded recent terminal text. Exact soft-wrap reconstruction and ANSI capture are unavailable. |
