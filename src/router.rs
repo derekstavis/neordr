@@ -55,7 +55,7 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         return Ok(api::Reply {
             result: ResponseResult::Pong {
                 version: concat!("neordr/", env!("CARGO_PKG_VERSION")).into(),
-                protocol: 0,
+                protocol: crate::contracts::wire::PROTOCOL_VERSION,
                 capabilities: None,
             },
             identity: api::Identity {

@@ -49,14 +49,21 @@ def main():
         address = root/'nvim.sock'
         endpoint = root/'config/herdr/sessions/test/herdr.sock'
         try:
-            if full_config:
-                children.append(subprocess.Popen([str(BIN),'router'],env=env,stdout=log,stderr=log))
-                eventually(lambda: (root/'config/herdr/herdr.sock').exists())
+            children.append(subprocess.Popen([str(BIN),'router'],env=env,stdout=log,stderr=log))
+            eventually(lambda: (root/'config/herdr/herdr.sock').exists())
             editor = subprocess.Popen(['nvim','--headless','-i','NONE','--listen',str(address)] + ([] if full_config else ['-u','NONE']),env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log)
             children.append(editor); eventually(address.exists)
             if not full_config:
                 children.append(subprocess.Popen([str(BIN),'--session','test','serve','--nvim',str(address)],env=env,stdout=log,stderr=log))
             eventually(lambda: endpoint.exists() and rpc(endpoint,'ping'))
+            # The real CLI checks ping.protocol before JSON API requests, even
+            # though the interactive shell negotiates endpoint generation 1.
+            for target, socket in [(['--session', 'test'], endpoint),
+                                   ([], root/'config/herdr/herdr.sock')]:
+                result = subprocess.run([str(HERDR), *target, 'pane', 'list'],
+                    env=env, capture_output=True, text=True, timeout=10)
+                assert result.returncode == 0, (result.stdout, result.stderr)
+                assert json.loads(result.stdout)['result']['panes'] == rpc(socket, 'pane.list')['panes']
             def evaluate(code): return lua(env,address,code)
             editor_buf = evaluate("vim.api.nvim_buf_set_lines(0,0,-1,false,{'NEORDR-EDITOR-MARKER'}); return vim.api.nvim_get_current_buf()")
             reference = subprocess.Popen(['nvim','--server',str(address),'--remote-ui'],env=env,

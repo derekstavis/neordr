@@ -166,7 +166,9 @@ pub fn execute(request: &crate::api::Request, initial: &Instance) -> crate::api:
             return Ok(Reply {
                 result: ResponseResult::Pong {
                     version: concat!("neordr/", env!("CARGO_PKG_VERSION")).into(),
-                    protocol: 0,
+                    // Herdr also gates JSON API commands on this schema version.
+                    // Interactive attach negotiates endpoint codecs separately.
+                    protocol: crate::contracts::wire::PROTOCOL_VERSION,
                     capabilities: Some(ServerCapabilities {
                         live_handoff: false,
                         detached_server_daemon: false,

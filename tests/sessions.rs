@@ -386,6 +386,34 @@ fn herdr_list_shape_and_structured_unsupported_methods() {
     let fixture = Fixture::new();
     assert_eq!(fixture.listed(), json!({"sessions": []}));
     let _bridge = fixture.bridge();
+    let version = neordr::contracts::wire::PROTOCOL_VERSION;
+    let ping = fixture.rpc("ping", json!({}));
+    assert_eq!(ping["protocol"], version);
+    assert_eq!(ping["capabilities"]["endpoint_protocol_generation"], 1);
+    assert_eq!(ping["capabilities"]["live_handoff"], false);
+    assert_eq!(
+        fixture.rpc("session.snapshot", json!({}))["snapshot"]["protocol"],
+        version
+    );
+    for method in ["ping", "session.snapshot"] {
+        let reply = neordr::router::dispatch(
+            &fixture.config,
+            &protocol::Request {
+                id: "version".into(),
+                method: method.into(),
+                params: json!({}),
+            },
+        );
+        let result = &reply["result"];
+        assert_eq!(
+            if method == "ping" {
+                &result["protocol"]
+            } else {
+                &result["snapshot"]["protocol"]
+            },
+            version
+        );
+    }
     assert_eq!(
         fixture.listed(),
         json!({"sessions": [{

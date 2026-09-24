@@ -23,8 +23,13 @@ not install Herdr agent integrations or replace the existing Moshi hooks. Herdr'
 
 Each bridge exposes a second mode-0600 Unix socket, `herdr-client.sock`, next to
 the JSON `herdr.sock`. It never replaces an existing socket. The Herdr preflight
-reads `capabilities.endpoint_protocol_generation = 1`; the private protocol stays
-at zero because Neordr does not implement it.
+reads `capabilities.endpoint_protocol_generation = 1`. JSON ping replies and
+session snapshots advertise the protocol version from the pinned Herdr schema
+(currently 22), because Herdr also checks that version before ordinary CLI API
+requests. Advertising zero blocked those commands with `protocol_mismatch` even
+while the interactive interface worked. This version does not enable private
+direct-terminal attach; interactive connections still negotiate endpoint codecs,
+and unsupported operations still return errors.
 
 The interface negotiates `endpoint.hello.v1` / `endpoint.welcome.v1` and the four
 generation-1 core codecs. It receives `shell.snapshot.v1` JSON projections and
@@ -90,8 +95,9 @@ HERDR_BIN="$HOME/Downloads/herdr-macos-aarch64" \
   NEORDR_NVIM_CONFIG="$HOME/.config/nvim" python3 tests/herdr_smoke.py
 ```
 
-The smoke test launches the actual Herdr binary in a PTY against a disposable
-Neovim. It verifies editor rendering and editing, native new-tab dialogs and
+The smoke test checks the actual Herdr CLI against both named-session and router
+JSON sockets, then launches its interface in a PTY against a disposable Neovim.
+It verifies editor rendering and editing, native new-tab dialogs and
 switching, terminal input, resize, clean detach, and killed-client cleanup. An
 independent Neovim UI stays connected throughout; both disconnect paths restore
 its larger size and preserve the terminal processes. The full-configuration mode

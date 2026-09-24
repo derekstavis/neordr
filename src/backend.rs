@@ -135,7 +135,7 @@ pub fn snapshot(instance: &Instance) -> Result<Snapshot> {
 pub fn empty_session_snapshot() -> SessionSnapshot {
     SessionSnapshot {
         version: concat!("neordr/", env!("CARGO_PKG_VERSION")).into(),
-        protocol: 0,
+        protocol: crate::contracts::wire::PROTOCOL_VERSION,
         focused_workspace_id: None,
         focused_tab_id: None,
         focused_pane_id: None,
