@@ -51,7 +51,10 @@ integration suite starts real Neovim instances. Python tests default to
 
 Core checks cover typed contracts, stale identities, terminal management,
 modal-prompt discovery, remote input, detach, router recovery, and workspace
-selection. Inspect `.github/workflows/ci.yml` for the CI checks.
+selection. The attachment lifecycle test forces simultaneous PTY backpressure,
+checks lossless forwarding and blocked-output cancellation, and verifies that
+signals, terminal hangup, and parent death release a narrow UI while preserving
+the editor and terminal jobs. Inspect `.github/workflows/ci.yml` for the CI checks.
 
 ## Plugin development
 

@@ -9,9 +9,9 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use std::{
     fs::File,
-    io::{self, Read, Write},
+    io::{self, Read},
     os::{
-        fd::{AsRawFd, FromRawFd},
+        fd::{AsRawFd, FromRawFd, RawFd},
         unix::process::CommandExt,
     },
     path::{Path, PathBuf},
@@ -50,6 +50,124 @@ impl Drop for Terminal {
     }
 }
 
+// A full PTY is backpressure, not permission to stop servicing the other
+// direction. Blocking write_all used to deadlock against nvim's output flush
+// and hide SIGHUP/SIGTERM indefinitely (the signal handler uses SA_RESTART).
+struct Connection {
+    stopped: Arc<AtomicBool>,
+    parent: libc::pid_t,
+    stdout_flags: libc::c_int,
+}
+impl Connection {
+    fn new(stopped: Arc<AtomicBool>) -> Result<Self> {
+        let stdout_flags = unsafe { libc::fcntl(1, libc::F_GETFL) };
+        ensure!(stdout_flags >= 0, "read output flags");
+        ensure!(
+            unsafe { libc::fcntl(1, libc::F_SETFL, stdout_flags | libc::O_NONBLOCK) } == 0,
+            "make attachment output nonblocking"
+        );
+        Ok(Self {
+            stopped,
+            parent: unsafe { libc::getppid() },
+            stdout_flags,
+        })
+    }
+
+    fn closed(&self) -> bool {
+        let mut fd = libc::pollfd {
+            fd: 0,
+            events: 0,
+            revents: 0,
+        };
+        unsafe {
+            libc::poll(&mut fd, 1, 0);
+        }
+        self.stopped.load(Ordering::Relaxed)
+            || unsafe { libc::getppid() } != self.parent
+            || fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0
+    }
+
+    fn write(&self, fd: RawFd, mut bytes: &[u8], drain: Option<RawFd>) -> io::Result<()> {
+        while !bytes.is_empty() {
+            if self.closed() {
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "attachment closed",
+                ));
+            }
+            let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
+            if written > 0 {
+                bytes = &bytes[written as usize..];
+                continue;
+            }
+            if written == 0 {
+                return Err(io::ErrorKind::WriteZero.into());
+            }
+            let error = io::Error::last_os_error();
+            match error.kind() {
+                io::ErrorKind::Interrupted => continue,
+                io::ErrorKind::WouldBlock => {}
+                _ => return Err(error),
+            }
+            let mut fds = [
+                libc::pollfd {
+                    fd,
+                    events: libc::POLLOUT,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: 0,
+                    events: 0,
+                    revents: 0,
+                },
+                libc::pollfd {
+                    fd: drain.unwrap_or(-1),
+                    events: libc::POLLIN,
+                    revents: 0,
+                },
+            ];
+            if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, 30) } < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(error);
+            }
+            if fds
+                .iter()
+                .any(|f| f.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
+            {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            if fds[2].revents & libc::POLLIN != 0 {
+                let mut output = [0u8; 16384];
+                let n = unsafe { libc::read(fds[2].fd, output.as_mut_ptr().cast(), output.len()) };
+                if n > 0 {
+                    self.write(1, &output[..n as usize], None)?;
+                } else if n == 0 {
+                    return Err(io::ErrorKind::BrokenPipe.into());
+                } else {
+                    let error = io::Error::last_os_error();
+                    if !matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+impl Drop for Connection {
+    fn drop(&mut self) {
+        unsafe {
+            libc::fcntl(1, libc::F_SETFL, self.stdout_flags);
+        }
+    }
+}
+
 struct Ui {
     child: Child,
     master: File,
@@ -80,6 +198,10 @@ impl Ui {
         );
         let master = unsafe { File::from_raw_fd(master) };
         let slave = unsafe { File::from_raw_fd(slave) };
+        ensure!(
+            unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } == 0,
+            "make remote UI PTY nonblocking"
+        );
         for fd in [master.as_raw_fd(), slave.as_raw_fd()] {
             ensure!(
                 unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == 0,
@@ -115,7 +237,12 @@ impl Ui {
         })
     }
 
-    fn action(&mut self, action: &str, index: Option<u8>) -> Result<Option<String>> {
+    fn action(
+        &mut self,
+        connection: &Connection,
+        action: &str,
+        index: Option<u8>,
+    ) -> Result<Option<String>> {
         let workspaces = if action == "workspace_open" {
             self.session_config
                 .as_ref()
@@ -147,9 +274,14 @@ impl Ui {
             }),
         )?;
         let marker = &reply.marker;
-        self.master.write_all(marker.as_bytes())?;
+        connection.write(
+            self.master.as_raw_fd(),
+            marker.as_bytes(),
+            Some(self.master.as_raw_fd()),
+        )?;
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
+            ensure!(!connection.closed(), "attachment closed during gesture");
             // Drain output while waiting: the TUI must not block on a full PTY
             // before it can read the marker and acknowledge the gesture.
             let mut fd = libc::pollfd {
@@ -164,8 +296,7 @@ impl Ui {
                 let mut bytes = [0; 16384];
                 let n = self.master.read(&mut bytes)?;
                 ensure!(n > 0, "remote UI closed during gesture");
-                io::stdout().write_all(&bytes[..n])?;
-                io::stdout().flush()?;
+                connection.write(1, &bytes[..n], None)?;
             }
             let reply: backend::GestureResult = backend::internal(
                 &self.instance,
@@ -214,10 +345,11 @@ impl Drop for Ui {
             let _ = self.child.wait();
         }
         // Restore terminal modes even when the child could not emit its TUI teardown.
-        let _ = io::stdout().write_all(
-            b"\x1b[?1049l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l",
-        );
-        let _ = io::stdout().flush();
+        let reset = b"\x1b[?1049l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l";
+        // Best effort only: a disconnected or full outer PTY must not block Drop.
+        unsafe {
+            libc::write(1, reset.as_ptr().cast(), reset.len());
+        }
     }
 }
 
@@ -244,18 +376,29 @@ fn remaining_editor(config: &Path, current: &str) -> Result<Option<String>> {
     }))
 }
 
-pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i32> {
+pub fn run(config: &Path, name: String, follow_selection: bool) -> Result<i32> {
     let stopped = Arc::new(AtomicBool::new(false));
     let signal = stopped.clone();
     ctrlc::set_handler(move || signal.store(true, Ordering::Relaxed))?;
     let _terminal = Terminal::raw()?;
+    let connection = Connection::new(stopped)?;
+    let result = run_connected(config, name, follow_selection, &connection);
+    if connection.closed() { Ok(0) } else { result }
+}
+
+fn run_connected(
+    config: &Path,
+    mut name: String,
+    follow_selection: bool,
+    connection: &Connection,
+) -> Result<i32> {
     loop {
         let mut ui = Ui::start(config, &name, follow_selection)?;
         let mut decoder = Decoder::default();
         let mut next_check = Instant::now();
         let mut size = dimensions()?;
         loop {
-            if stopped.load(Ordering::Relaxed) {
+            if connection.closed() {
                 return Ok(0);
             }
             if let Some(status) = ui.child.try_wait()? {
@@ -314,8 +457,7 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
                         return Ok(0);
                     }
                     Ok(n) => {
-                        io::stdout().write_all(&buffer[..n])?;
-                        io::stdout().flush()?;
+                        connection.write(1, &buffer[..n], None)?;
                     }
                     Err(e) if e.raw_os_error() == Some(libc::EIO) => {
                         if follow_selection && let Some(next) = remaining_editor(config, &name)? {
@@ -324,11 +466,27 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
                         }
                         return Ok(0);
                     }
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                        ) => {}
                     Err(e) => return Err(e.into()),
                 }
             }
             let events = if fds[0].revents & libc::POLLIN != 0 {
-                let n = io::stdin().read(&mut buffer)?;
+                let n = match io::stdin().read(&mut buffer) {
+                    Ok(n) => n,
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                        ) =>
+                    {
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 if n == 0 {
                     return Ok(0);
                 }
@@ -339,16 +497,20 @@ pub fn run(config: &Path, mut name: String, follow_selection: bool) -> Result<i3
             for event in events {
                 let result = match event {
                     Event::Bytes(bytes) => {
-                        ui.master.write_all(&bytes)?;
+                        connection.write(
+                            ui.master.as_raw_fd(),
+                            &bytes,
+                            Some(ui.master.as_raw_fd()),
+                        )?;
                         continue;
                     }
                     Event::Action("detach") => {
-                        ui.action("barrier", None)?;
+                        ui.action(connection, "barrier", None)?;
                         return Ok(0);
                     }
                     Event::Action("ignore") => continue,
-                    Event::Action(action) => ui.action(action, None),
-                    Event::Tab(index) => ui.action("tab", Some(index)),
+                    Event::Action(action) => ui.action(connection, action, None),
+                    Event::Tab(index) => ui.action(connection, "tab", Some(index)),
                 };
                 // If ordering cannot be established, detach rather than send
                 // subsequent text to a possibly different terminal.

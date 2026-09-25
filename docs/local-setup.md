@@ -116,6 +116,11 @@ process attached. Use Ctrl-B, q or `:detach` before leaving when you want an
 immediate detach. Do not quit Neovim just to disconnect a UI: quitting ends its
 terminal jobs. Use Neovim's `nvim_list_uis()` when diagnosing a lingering client.
 
+Neordr also detaches its owned remote UI when its transport parent exits or the
+terminal hangs up. Input and output forwarding remain interruptible under PTY
+backpressure, so a full terminal buffer cannot prevent signal-driven cleanup.
+After upgrading Neordr, reconnect existing attachments to use the new executable.
+
 ## Chat View and agent identity
 
 Managed terminals inherit Herdr-compatible session and pane identities before
