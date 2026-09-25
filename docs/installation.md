@@ -202,11 +202,13 @@ in `~/.codex/config.toml`:
 
 ```toml
 [tui]
-terminal_title = ["thread-title", "project-name", "thread-id"]
+terminal_title = ["thread-id"]
 ```
 
-Keep `thread-id` last: moshi-hook 0.3.26 recognizes a trailing conversation UUID
-in the terminal title. Check the setting with `codex doctor`, then restart/resume
+Use the ID alone: Codex truncates long terminal titles, which can cut off a
+trailing UUID when other items precede it. moshi-hook 0.3.26 recognizes a complete
+conversation UUID at the end of the terminal title. Check the setting with
+`codex doctor`, then restart/resume
 the Codex frontend. A running frontend may retain its previous title settings.
 This uses Codex's [terminal title configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
 without changing Moshi's transcript files or parsing conversations in Neordr.
