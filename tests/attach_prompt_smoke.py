@@ -89,6 +89,15 @@ def main():
                     # Discovery itself must not consume the acknowledgement.
                     rpc(endpoint, 'ping')
                     assert mode() == 'r'
+                    # A bridge restart must reuse the configured backend while
+                    # blocked, without requiring deferred Lua or dismissing it.
+                    children[-1].terminate()
+                    children[-1].wait(timeout=5)
+                    children.append(subprocess.Popen(
+                        [str(BIN), '--session', 'ui', 'serve', '--nvim', str(address)],
+                        env=env, stdout=log, stderr=log))
+                    eventually(lambda: endpoint.exists() and rpc(endpoint, 'ping'))
+                    assert mode() == 'r', 'bridge recovery consumed the acknowledgement'
                     pair = [attach(), attach()]
                     clients.extend(pair)
                     for client in pair:

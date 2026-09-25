@@ -55,6 +55,25 @@ def main():
                 "return vim.json.encode({same_module=updated==old, before_job=job or false, "
                 "after_job=updated.job or false, timer_active=updated.router_timer:is_active()})"))
             assert reload['same_module'] and reload['before_job'] and reload['before_job'] == reload['after_job'] and reload['timer_active'], (reload, (root/'startup.log').read_text())
+            # Recovery belongs to the router, not the plugin job. Adoption must
+            # clear stale failures, allow terminals and avoid a duplicate bridge.
+            session = lua(env, address, "return require('neordr').session")
+            endpoint = root / 'c/herdr/sessions' / session / 'herdr.sock'
+            bridge_pid = rpc(endpoint, 'ping')['pid']
+            os.kill(bridge_pid, signal.SIGKILL)
+            eventually(lambda: lua(env, address, "return require('neordr').job == nil") == 'true')
+            recovered = eventually(lambda: (p := rpc(endpoint, 'ping')['pid']) != bridge_pid and p,
+                                   seconds=15)
+            assert editor.poll() is None
+            assert lua(env, address,
+                "local p=require('neordr'); assert(p.job == nil); "
+                "assert(p.bridge_status()); assert(p.last_error == nil); "
+                "assert(p.setup(p.options)); assert(p.job == nil and not p.bridge_starting); "
+                "vim.cmd('NeordrTerm'); return vim.bo.buftype") == 'terminal'
+            assert rpc(endpoint, 'ping')['pid'] == recovered, 'setup replaced a healthy recovered bridge'
+            health = lua(env, address, "vim.cmd('checkhealth neordr'); "
+                "return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\\n')")
+            assert 'ERROR' not in health and 'Session bridge is responding' in health, health
             lua(env, address, "vim.schedule(function() vim.cmd('qa!') end); return true")
             assert editor.wait(timeout=5) == 0
             eventually(lambda: not address.exists())

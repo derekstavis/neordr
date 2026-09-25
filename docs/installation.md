@@ -189,6 +189,12 @@ Install and configure Moshi's host service and Claude/Codex hooks following
 [Moshi's documentation](https://getmoshi.app/docs/herdr). Neordr uses the
 existing binaries and agent transcript readers.
 
+Claude profiles using `CLAUDE_CONFIG_DIR` need Moshi hooks in that profile's
+`settings.json` too. Hooks installed in `~/.claude/settings.json` do not cover
+another configuration directory. Without them Moshi can detect the Claude
+process while Chat View has no conversation ID or transcript to display.
+Check the profile used by the agent, rather than only the shell's default profile.
+
 Moshi expects a command named `herdr`. If that path is available, create the
 compatibility alias:
 

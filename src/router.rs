@@ -275,6 +275,19 @@ pub fn start_background(config: &Path) -> Result<()> {
     if router_ready(config).is_ok() {
         return Ok(());
     }
+    // A refused/dropped health request is not proof of a foreign server. Under
+    // load the bounded request pool can reject a probe, and another launcher
+    // can still be between bind and accept. Retry without replacing the socket.
+    let retry_deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < retry_deadline {
+        if std::os::unix::net::UnixStream::connect(config.join("herdr/herdr.sock")).is_err() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+        if router_ready(config).is_ok() {
+            return Ok(());
+        }
+    }
     ensure!(
         std::os::unix::net::UnixStream::connect(config.join("herdr/herdr.sock")).is_err(),
         "default Herdr socket is accepting connections but is not a healthy Neordr router"

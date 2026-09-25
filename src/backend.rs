@@ -84,6 +84,19 @@ pub struct GestureResult {
 }
 
 pub fn initialize(instance: &Instance, session: &str) -> Result<()> {
+    // A plugin-configured backend survives its bridge process. Reuse it even
+    // while the editor is waiting at a prompt; configuring it again is a
+    // deferred mutation and can time out before the bridge opens its endpoint.
+    if nvim::read_lua(
+        &instance.socket,
+        "local p=package.loaded['neordr.backend']; return p ~= nil and p.session == ...",
+        vec![session.into()],
+    )?
+    .as_bool()
+        == Some(true)
+    {
+        return Ok(());
+    }
     nvim::exec_lua(
         &instance.socket,
         "local code,session=...; local key='neordr.backend'; if not package.loaded[key] then package.loaded[key]=assert(loadstring(code))() end; return package.loaded[key].configure(session)",

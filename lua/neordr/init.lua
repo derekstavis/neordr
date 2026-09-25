@@ -17,8 +17,22 @@ local function fail(message)
   return false, message
 end
 
-local function running()
+local function owned_job_running()
   return M.job and vim.fn.jobwait({ M.job }, 0)[1] == -1
+end
+
+-- Router recovery can own the bridge process. A plugin job ID is therefore
+-- not the source of truth for this editor's connection.
+function M.bridge_status()
+  local response, problem = diagnostics.bridge(M.session)
+  if response and M.last_error and M.last_error:match('^Session bridge exited') then
+    M.last_error = nil
+  end
+  return response, problem
+end
+
+local function running()
+  return owned_job_running() or (M.session and M.bridge_status() ~= nil)
 end
 
 local function commands()
@@ -77,7 +91,12 @@ local function start(opts, bin, session, generation)
             vim.schedule(function() vim.notify('Neordr router: ' .. message, vim.log.levels.ERROR) end)
           end
           M.router_log = message
-        elseif code == 0 then M.router_log = nil end
+        elseif code == 0 then
+          M.router_log = nil
+          if not owned_job_running() and not M.bridge_starting then
+            vim.schedule(function() if not vim.g.neordr_exiting then M.bridge_status() end end)
+          end
+        end
       end,
     })
     if not spawned or job <= 0 then
@@ -97,11 +116,11 @@ local function start(opts, bin, session, generation)
     if M.router_timer then M.router_timer:stop(); M.router_timer:close(); M.router_timer = nil end
     if M.job then vim.fn.jobstop(M.job) end
   end })
-  if running() or M.bridge_starting then return true end
+  if M.bridge_starting or running() then return true end
   M.bridge_starting = true
   local function launch_bridge()
-    M.bridge_starting = false
-    if vim.g.neordr_exiting then return end
+    if vim.g.neordr_exiting then M.bridge_starting = false; return end
+    if running() then M.bridge_starting = false; return end
     local stderr = {}
     local spawned, job = pcall(vim.fn.jobstart, { bin, '--session', session, 'serve', '--nvim', vim.v.servername }, {
       detach = true,
@@ -110,10 +129,15 @@ local function start(opts, bin, session, generation)
         if M.job == id then M.job = nil end
         if code ~= 0 and not vim.g.neordr_exiting then
           local detail = table.concat(stderr, '\n')
-          fail('Session bridge exited with code ' .. code .. (detail ~= '' and ': ' .. detail or ''))
+          vim.schedule(function()
+            if not vim.g.neordr_exiting and not running() then
+              fail('Session bridge exited with code ' .. code .. (detail ~= '' and ': ' .. detail or ''))
+            end
+          end)
         end
       end,
     })
+    M.bridge_starting = false
     if not spawned or job <= 0 then fail('Cannot start session bridge: ' .. tostring(job)); return end
     M.job = job
   end

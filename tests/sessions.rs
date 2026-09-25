@@ -1033,6 +1033,59 @@ fn modal_prompt_keeps_sessions_and_workspaces_visible_without_dismissing_it() {
 }
 
 #[test]
+fn router_launcher_retries_a_dropped_health_probe() {
+    use std::{io::Write, os::unix::net::UnixListener};
+    let root = tempfile::tempdir_in("/tmp").unwrap();
+    let config = root.path().to_owned();
+    fs::create_dir(config.join("herdr")).unwrap();
+    let socket = config.join("herdr/herdr.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let server_config = config.clone();
+    let server = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut dropped = false;
+        while Instant::now() < deadline {
+            let Ok((mut stream, _)) = listener.accept() else {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            };
+            if stream.set_nonblocking(false).is_err()
+                || stream
+                    .set_read_timeout(Some(Duration::from_millis(200)))
+                    .is_err()
+            {
+                continue; // The accept-only probe may already have disconnected.
+            }
+            let Ok(frame) = protocol::read_frame(&mut std::io::BufReader::new(&mut stream)) else {
+                continue; // Accept-only liveness probe.
+            };
+            if !dropped {
+                dropped = true;
+                continue; // Model the router's bounded worker pool rejecting a request.
+            }
+            let request = serde_json::from_slice(&frame).unwrap();
+            let reply = neordr::router::dispatch(&server_config, &request);
+            serde_json::to_writer(&mut stream, &reply).unwrap();
+            stream.write_all(b"\n").unwrap();
+            return true;
+        }
+        false
+    });
+    let output = Command::new(BIN)
+        .args(["router", "--background"])
+        .env("XDG_CONFIG_HOME", &config)
+        .output()
+        .unwrap();
+    assert!(server.join().unwrap(), "launcher did not retry health");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn partial_router_request_does_not_block_health_checks() {
     use std::{io::Write, os::unix::net::UnixStream};
     let fixture = Fixture::new();

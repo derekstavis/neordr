@@ -97,4 +97,22 @@ function M.ping(path)
   return reply.result
 end
 
+function M.bridge(session)
+  if not session then return nil, 'Neordr is not configured' end
+  local root, problem = M.config_root()
+  if not root then return nil, problem end
+  local path = root .. '/herdr/sessions/' .. session .. '/herdr.sock'
+  if not vim.uv.fs_stat(path) then return nil, 'Session bridge socket is missing' end
+  local response, err = M.ping(path)
+  if not response then return nil, err end
+  if not response.neordr or response.neordr.pid ~= vim.fn.getpid()
+      or response.neordr.generation ~= vim.g.neordr_generation then
+    return nil, 'Session bridge belongs to another Neovim instance'
+  end
+  if response.version ~= 'neordr/' .. require('neordr.version') then
+    return nil, 'Session bridge version mismatch: ' .. tostring(response.version)
+  end
+  return response
+end
+
 return M

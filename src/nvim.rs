@@ -132,6 +132,12 @@ pub fn inspect(socket: &Path) -> Result<Instance> {
 }
 
 pub fn register_generation(socket: &Path) -> Result<Instance> {
+    // Plugin setup already assigned an identity. Recovery must not queue a
+    // mutation behind a hit-enter prompt just to read that existing identity.
+    let instance = inspect(socket)?;
+    if instance.generation.is_some() {
+        return Ok(instance);
+    }
     exec_lua(
         socket,
         "if not vim.g.neordr_generation then \
