@@ -195,6 +195,22 @@ another configuration directory. Without them Moshi can detect the Claude
 process while Chat View has no conversation ID or transcript to display.
 Check the profile used by the agent, rather than only the shell's default profile.
 
+Codex builds using a shared app-server daemon may leave Moshi unable to associate
+the terminal process with its transcript. For builds supporting the `thread-id`
+title item (verified with Codex 0.157.0), add this to the existing `[tui]` section
+in `~/.codex/config.toml`:
+
+```toml
+[tui]
+terminal_title = ["thread-title", "project-name", "thread-id"]
+```
+
+Keep `thread-id` last: moshi-hook 0.3.26 recognizes a trailing conversation UUID
+in the terminal title. Check the setting with `codex doctor`, then restart/resume
+the Codex frontend. A running frontend may retain its previous title settings.
+This uses Codex's [terminal title configuration](https://learn.chatgpt.com/docs/config-file/config-reference),
+without changing Moshi's transcript files or parsing conversations in Neordr.
+
 Moshi expects a command named `herdr`. If that path is available, create the
 compatibility alias:
 
