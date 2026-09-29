@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 bincode = { version = "2", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 ctrlc = { version = "3", features = ["termination"] }

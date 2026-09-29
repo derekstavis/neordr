@@ -113,16 +113,33 @@ engine. Full schema coverage does not imply support for every Herdr operation.
 See [contract generation](build_support/README.md) and the
 [architecture notes](docs/design.md).
 
+## Diagnostics and Moshi control mode
+
+Run `neordr doctor` (or `neordr doctor --json`) to compare registered editors,
+attached UI sizes, bridge/router health, Moshi discovery and saved hook records.
+Use `--session NAME doctor` to inspect one editor or `doctor --gateway-port PORT`
+for a nondefault local Moshi gateway. `:checkhealth neordr` includes the current
+editor's report. These checks never start services, send input, or change agent
+settings. Conversation discovery and transcript readability are distinct checks;
+the doctor reports discovery and does not open chat contents.
+
+Moshi's Herdr control mode is supported through
+`herdr [--session NAME] terminal session control PANE_ID --takeover --cols 80 --rows 24`.
+It focuses the requested terminal and renders the **full Neovim editor**.
+`--takeover` accepts control without evicting other attached clients. All clients
+still share the editor's layout, focus and size constraints. Closing a control
+connection detaches only that remote UI.
+
 ## Compatibility and limits
 
 | Area | Current behavior |
 | --- | --- |
-| Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Hook compatibility tested with 0.3.21 and 0.3.26. |
+| Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Hook compatibility tested through 0.4.9, including its control-mode transport. |
 | Herdr interactive UI | The default session groups editor workspaces; full editor rendering, terminal selection, creation, input, resizing, and detach. [Compatibility details](docs/herdr-interface.md). |
 | Multiple clients | All clients share Neovim's focus and layout. The smallest attached UI constrains the editor size. |
 | Agent status | Foreground Claude/Codex detection; activity status remains `unknown`. |
 | Capture | Visible and bounded recent terminal text. Exact soft-wrap reconstruction and ANSI capture are unavailable. |
-| Herdr features | Supported operations are a subset. Herdr multi-pane tab groups, plugins, and its private direct-terminal protocol are not implemented. |
+| Herdr features | Supported operations are a subset. Herdr multi-pane tab groups, plugins, and direct binary terminal control/observation are not implemented; Moshi uses the supported JSON-lines CLI adapter. |
 | Platforms | macOS and Linux targets; no Windows support. Published build and test results are recorded in CI. |
 
 Session and pane identities include the owning editor's generation. Stale
@@ -143,7 +160,9 @@ cargo build --release --locked
 
 Only the top-level Herdr submodule is needed. If you already cloned without
 submodules, run `git submodule update --init vendor/herdr` before building.
-Rust tooling uses the repository's pinned toolchain.
+Rust tooling uses the repository's pinned toolchain. Run `bash scripts/check.sh`
+for the CI suite, and `bash scripts/check-moshi.sh` for optional synthetic
+compatibility tests against an installed Moshi hook.
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [development guide](docs/development.md) for tests, architecture boundaries, and

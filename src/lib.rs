@@ -19,3 +19,6 @@ pub mod router;
 pub mod selection;
 pub mod server;
 pub mod session;
+
+pub mod control;
+pub mod doctor;

@@ -21,6 +21,7 @@ initializing the submodule, builds can run offline.
 | `src/api.rs`, `src/protocol.rs` | Typed application requests and JSON transport boundaries. |
 | `src/server.rs`, `src/router.rs` | Per-editor service and default cross-editor routing. |
 | `src/backend.rs`, `src/process.rs` | Typed Neovim backend operations and foreground process discovery. |
+| `src/control.rs`, `src/doctor.rs` | Typed control-mode CLI streaming and read-only integration diagnostics. |
 | `src/attach.rs` | PTY supervision, remote UI attachment, and shortcut translation. |
 | `src/endpoint/` | Herdr interactive protocol: framing, projection, input sequencing, UI ownership, and rendering. |
 | `lua/neordr/` | Plugin setup, health checks, terminal identity, lifecycle, and optional adapters. |
@@ -84,9 +85,7 @@ not call an LLM or require real conversations.
 
 ```sh
 export MOSHI_HOOK_BIN=/path/to/moshi-hook
-python3 tests/moshi_smoke.py
-python3 tests/moshi_create_smoke.py
-python3 tests/approval_smoke.py
+bash scripts/check-moshi.sh
 python3 tests/split_smoke.py
 ```
 
@@ -94,7 +93,13 @@ These exercise the installed hook and gateway: transcript backlog and streaming,
 multiline Chat View input, workspace/terminal creation, split/focus/close, launch
 protection, and local question/plan/permission answers. The approval fixture
 runs at 120 and 32 columns; `NEORDR_TEST_COLUMNS=32` selects just the narrow case.
-Cloud delivery and physical phone interaction are separate manual checks. See
+The interaction suite additionally checks long Unicode input, multipart pasted
+blocks, literal attachment-path delivery, reverse-tab/page-down/interrupt keys,
+and incomplete, mismatched and remaining asynchronous question answers. It
+asserts exact input and isolation from the other fixture pane. File upload
+storage, cloud delivery and physical phone interaction remain separate checks.
+The control-mode fixture exercises Moshi's real WebSocket transport through
+Neordr's JSON-lines CLI, alongside the existing ordinary PTY path. See
 [approval compatibility](approval-compatibility.md) for known upstream limits.
 
 For an isolated browser fixture:

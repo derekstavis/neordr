@@ -23,6 +23,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Diagnose bridges, attached UIs and Moshi conversation discovery (read-only).
+    Doctor {
+        #[arg(long)]
+        json: bool,
+        /// Local Moshi HTTP gateway port.
+        #[arg(long, default_value_t = 24543)]
+        gateway_port: u16,
+    },
+    /// Herdr-compatible terminal control streaming (full Neovim editor).
+    Terminal {
+        #[command(subcommand)]
+        command: TerminalCommands,
+    },
     /// Validate Moshi's Herdr compatibility configuration.
     Config {
         #[command(subcommand)]
@@ -60,6 +73,27 @@ enum Commands {
         method: String,
         #[arg(long, default_value = "{}")]
         params: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum TerminalCommands {
+    Session {
+        #[command(subcommand)]
+        command: TerminalSessions,
+    },
+}
+#[derive(Subcommand)]
+enum TerminalSessions {
+    Control {
+        target: String,
+        /// Accepted for compatibility; attaches another UI without evicting clients.
+        #[arg(long)]
+        takeover: bool,
+        #[arg(long, default_value_t = 80)]
+        cols: u16,
+        #[arg(long, default_value_t = 24)]
+        rows: u16,
     },
 }
 
@@ -138,6 +172,26 @@ fn run() -> Result<i32> {
     }
     let config = session::config_root()?;
     match cli.command {
+        Some(Commands::Doctor { json, gateway_port }) => {
+            let report = neordr::doctor::inspect(&config, gateway_port, cli.session.as_deref())?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print!("{}", report.text());
+            }
+        }
+        Some(Commands::Terminal {
+            command:
+                TerminalCommands::Session {
+                    command:
+                        TerminalSessions::Control {
+                            target,
+                            takeover: _,
+                            cols,
+                            rows,
+                        },
+                },
+        }) => return neordr::control::run(&config, cli.session.as_deref(), &target, cols, rows),
         Some(Commands::Config {
             command: ConfigCommands::Check,
         }) => {

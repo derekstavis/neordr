@@ -32,6 +32,32 @@ function M.check()
   elseif router.version ~= 'neordr/' .. require('neordr.version') then
     health.warn('Router version differs: ' .. tostring(router.version), 'An older shared router may still be running')
   else health.ok('Router is responding') end
+  if validated then
+    health.start('Moshi and attached UIs')
+    local result
+    local process = vim.system({ validated.bin, '--session', plugin.session, 'doctor', '--json' },
+      { text = true }, function(value) result = value end)
+    -- Service editor RPC while the read-only CLI inspects the current instance.
+    if not vim.wait(15000, function() return result ~= nil end, 20) then
+      process:kill(15)
+      health.warn('Neordr doctor timed out; run neordr doctor --json in a terminal')
+      return
+    end
+    local ok, report = pcall(vim.json.decode, result.stdout or '')
+    if result.code ~= 0 or not ok or type(report) ~= 'table' or type(report.checks) ~= 'table' then
+      health.warn('Cannot read doctor report: ' .. vim.trim(result.stderr or ''))
+      return
+    end
+    for _, check in ipairs(report.checks) do
+      local log = check.status == 'ok' and health.ok or check.status == 'warn' and health.warn or health.info
+      log(check.subject .. ': ' .. check.detail)
+    end
+    for _, editor in ipairs(report.editors or {}) do
+      for _, ui in ipairs(editor.uis or {}) do
+        health.info(('UI %s: %sx%s (%s)'):format(ui.channel, ui.width, ui.height, ui.client))
+      end
+    end
+  end
 end
 
 return M

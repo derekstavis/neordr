@@ -153,3 +153,15 @@ Temporary supporting evidence is in `/private/tmp/moshi-inspection-049/`,
 `/private/tmp/neordr-moshi-049-doctor.json`. These files are not durable test
 artifacts. This audit does not claim an exhaustive refreshed inventory of every
 Herdr RPC or runtime validation of each newly supported agent.
+
+## Implementation follow-up
+
+Implemented control-mode CLI transport with upstream-extracted input types,
+full-editor rendering, bounded nonblocking IO and remote-UI-only cleanup.
+Added `neordr doctor [--json]` and current-editor Lua health integration. The
+existing approval suite was revalidated against 0.4.9 at 120 and 32 columns;
+new interaction tests cover multipart/long Unicode prompts, literal attachment
+paths, navigation/interrupt keys and asynchronous question request validation
+and remaining-question delivery. Tests do not claim file-upload storage,
+model execution or cloud/native-client coverage. Broader agent support remains
+deferred. See `scripts/check-moshi.sh` for the opt-in suite.

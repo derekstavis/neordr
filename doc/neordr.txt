@@ -276,4 +276,27 @@ Upgrades ~
     then reconnect remote views. An older shared router can survive editor
     restarts; health reports its version without replacing it automatically.
 
+
+MOSHI DIAGNOSTICS AND CONTROL                               *neordr-moshi-control*
+
+:checkhealth neordr includes read-only bridge, router, Moshi conversation
+association and attached-UI diagnostics for this editor. From a terminal: >
+    neordr doctor
+    neordr doctor --json
+    neordr --session NAME doctor --gateway-port 24543
+<
+Warnings distinguish unavailable gateways, missing conversations and saved-hook
+mismatches. A small UI alone does not prove that a client is stale. The doctor
+never kills clients, sends agent input, changes settings or reads chat contents.
+
+Moshi 0.4.4+ can use Herdr control mode. Neordr accepts: >
+    herdr terminal session control PANE_ID --takeover --cols 80 --rows 24
+<
+This focuses the terminal buffer while preserving the full editor view. Other
+clients remain attached and share Neovim's layout, focus and sizing constraints.
+Release, EOF and connection loss detach only this UI. The JSON-lines input uses
+Herdr's upstream typed command contract; stdout contains terminal.frame records
+with base64 ANSI bytes. Commands are limited to 64 KiB and pending IO to 4 MiB;
+slow or invalid streams disconnect rather than leave a stuck UI behind.
+
  vim:tw=78:ts=8:noet:ft=help:norl:

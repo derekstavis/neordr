@@ -205,6 +205,27 @@ pub fn generate() {
             _ => false,
         })
         .collect();
+    let terminal_control: Vec<_> = source("src/client/terminal_sessions.rs")
+        .items
+        .into_iter()
+        .filter_map(|mut item| {
+            match &mut item {
+                Item::Enum(e) if e.ident.to_string().starts_with("TerminalControl") => {
+                    e.vis = syn::parse_quote!(pub);
+                }
+                Item::Fn(f) if f.sig.ident == "terminal_control_command_from_json" => {
+                    f.vis = syn::parse_quote!(pub);
+                }
+                _ => return None,
+            }
+            Some(item)
+        })
+        .collect();
+    assert_eq!(
+        terminal_control.len(),
+        4,
+        "upstream terminal control contract changed"
+    );
     let config = supporting_types(
         "src/config/model.rs",
         &["ToastHerdrPosition", "ConfigReloadStatus"],
@@ -234,6 +255,11 @@ pub fn generate() {
             use serde::{Deserialize, Serialize};
             use super::wire::ClientSurfaceSize;
             #(#endpoint)*
+        }
+        pub mod terminal_control {
+            use base64::Engine;
+            use super::wire::{ClientMessage, AttachScrollDirection, AttachScrollSource};
+            #(#terminal_control)*
         }
         pub mod config { use serde::{Deserialize, Serialize}; #(#config)* }
         pub mod input { use serde::{Deserialize, Serialize}; #(#input)* }

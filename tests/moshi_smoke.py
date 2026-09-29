@@ -157,6 +157,51 @@ def pty_attachment(port, env, address, root):
     print('Moshi sidebar preflight, WebSocket PTY attach, input, detach, and reattach: PASS')
 
 
+def control_attachment(port, env, address, pane):
+    """Moshi's real control-mode WebSocket must render the full editor and detach."""
+    from urllib.parse import urlencode
+    query = urlencode({'mux': 'herdr', 'muxSession': 'smoke', 'pane': pane})
+    with socket.create_connection(('127.0.0.1', port), timeout=10) as client:
+        key = base64.b64encode(os.urandom(16)).decode()
+        client.sendall((f'GET /v1/pty?{query} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n'
+                       f'Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n'
+                       'Sec-WebSocket-Version: 13\r\n\r\n').encode())
+        reader = client.makefile('rb')
+        assert b'101' in reader.readline()
+        while reader.readline() != b'\r\n': pass
+        output = bytearray()
+        def drain():
+            try:
+                while True:
+                    h = reader.read(2)
+                    if len(h) != 2: return
+                    n = h[1] & 127
+                    if n == 126: n = struct.unpack('!H', reader.read(2))[0]
+                    elif n == 127: n = struct.unpack('!Q', reader.read(8))[0]
+                    assert n < 4 * 1024 * 1024
+                    output.extend(reader.read(n))
+                    if h[0] & 15 == 8: return
+            except OSError: pass
+        thread = threading.Thread(target=drain, daemon=True); thread.start()
+        def send(value):
+            data = json.dumps(value).encode(); mask = os.urandom(4)
+            header = bytes([0x81, 0x80 | len(data)]) if len(data) < 126 else bytes([0x81, 0xfe]) + struct.pack('!H', len(data))
+            client.sendall(header + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+        try:
+            eventually(lambda: lua(env, address, 'return #vim.api.nvim_list_uis()') == '1')
+            eventually(lambda: len(output) > 0)
+            send({'type': 'resize', 'cols': 96, 'rows': 28})
+            eventually(lambda: lua(env, address, 'return vim.o.columns') == '96')
+            send({'type': 'input', 'data': '\x1c\x0e:lua vim.g.moshi_control_probe = 42\r'})
+            eventually(lambda: lua(env, address, 'return vim.g.moshi_control_probe or 0') == '42')
+            send({'type': 'scroll', 'direction': 'up', 'lines': 2})
+        finally:
+            client.shutdown(socket.SHUT_RDWR)
+            thread.join(timeout=2); reader.close()
+    eventually(lambda: lua(env, address, 'return #vim.api.nvim_list_uis()') == '0')
+    print('Moshi control-mode render, full-editor input, resize and disconnect: PASS')
+
+
 def main():
     processes = []
     with tempfile.TemporaryDirectory(prefix="neordr-moshi-", dir="/tmp") as directory:
@@ -229,6 +274,7 @@ def main():
                 pane = lua(env, address, code)
                 eventually(lambda: "READY" in rpc(endpoint, "pane.read", {"pane_id": pane, "source": "visible"})["read"]["text"])
                 sessions[source] = (session, pane, marker, path)
+            control_attachment(port, env, address, sessions["codex"][1])
             agents = rpc(endpoint, "agent.list")["agents"]
             assert sorted(a["agent"] for a in agents) == ["claude", "codex"], agents
             for source, (session, pane, marker, path) in sessions.items():
