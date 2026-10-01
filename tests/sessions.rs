@@ -665,6 +665,103 @@ fn default_router_targets_exactly_one_of_two_neovim_instances() {
 }
 
 #[test]
+fn editor_only_process_info_does_not_require_process_enumeration() {
+    let fixture = Fixture::new();
+    let bin = fixture.root.join("bin");
+    fs::create_dir(&bin).unwrap();
+    fs::write(bin.join("ps"), "#!/bin/sh\nexit 1\n").unwrap();
+    fs::set_permissions(bin.join("ps"), fs::Permissions::from_mode(0o755)).unwrap();
+    let _bridge = Process(
+        fixture
+            .command()
+            .args(["--session", &fixture.session, "serve", "--nvim"])
+            .arg(&fixture.socket)
+            .env("PATH", &bin)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for(|| session::inspect_bridge(&fixture.endpoint()).is_ok());
+    let result = serde_json::from_value(fixture.rpc("pane.process_info", json!({}))).unwrap();
+    let neordr::contracts::api::ResponseResult::PaneProcessInfo { process_info } = result else {
+        panic!("expected process metadata");
+    };
+    assert!(process_info.shell_pid.is_none());
+    assert!(process_info.foreground_processes.is_empty());
+}
+
+#[test]
+fn aggregate_reads_share_one_fresh_process_scan_and_observe_agent_exit() {
+    let first = Fixture::new();
+    let mut second = Fixture::new();
+    second.config = first.config.clone();
+    second.session = "other".into();
+    let _first_bridge = first.bridge();
+    let _second_bridge = second.bridge();
+    let a = first.terminal("claude");
+    let b = second.terminal("codex");
+    let bin = first.root.join("bin");
+    fs::create_dir(&bin).unwrap();
+    fs::write(
+        bin.join("ps"),
+        "#!/bin/sh\nprintf 'scan\\n' >> \"$NEORDR_TEST_SCANS\"\nexec /bin/ps \"$@\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(bin.join("ps"), fs::Permissions::from_mode(0o755)).unwrap();
+    let scans = first.root.join("scans");
+    let _router = Process(
+        first
+            .command()
+            .arg("router")
+            .env("NEORDR_TEST_SCANS", &scans)
+            .env("PATH", &bin)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let socket = first.config.join("herdr/herdr.sock");
+    wait_for(|| socket.exists());
+    let collect = || {
+        protocol::call(
+            &socket,
+            &protocol::Request {
+                id: "fresh".into(),
+                method: "session.snapshot".into(),
+                params: json!({}),
+            },
+        )
+        .unwrap()["snapshot"]
+            .clone()
+    };
+    let initial = collect();
+    assert_eq!(initial["agents"].as_array().unwrap().len(), 2);
+    assert_eq!(fs::read_to_string(&scans).unwrap(), "scan\n");
+    nvim::exec_lua(
+        &second.socket,
+        "vim.fn.jobstop(...); return true",
+        vec![b["job"].as_i64().unwrap().into()],
+    )
+    .unwrap();
+    wait_for(|| {
+        nvim::exec_lua(
+            &second.socket,
+            "return vim.fn.jobwait({...}, 0)[1] ~= -1",
+            vec![b["job"].as_i64().unwrap().into()],
+        )
+        .unwrap()
+        .as_bool()
+            == Some(true)
+    });
+    let after = collect();
+    assert_eq!(fs::read_to_string(&scans).unwrap(), "scan\nscan\n");
+    assert_eq!(after["agents"].as_array().unwrap().len(), 1);
+    assert_eq!(after["agents"][0]["pane_id"], a["pane"]);
+    assert_eq!(after["workspaces"].as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn framing_rejects_unterminated_and_oversized_requests() {
     assert!(protocol::read_frame(&mut Cursor::new(b"{}".to_vec())).is_err());
     assert!(protocol::read_frame(&mut Cursor::new(vec![b'x'; protocol::MAX_FRAME + 1])).is_err());

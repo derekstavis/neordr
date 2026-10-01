@@ -177,23 +177,28 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         &request.command,
         ApiCommand::Herdr(Method::SessionSnapshot(_))
     ) {
-        let sessions = session::bridges(config)?;
-        let selected =
-            crate::selection::current(config)?.or_else(|| sessions.first().map(|s| s.name.clone()));
+        let sessions = session::live_bridges(config)?;
+        let selected = crate::selection::current(config)?
+            .or_else(|| sessions.first().map(|(s, _)| s.name.clone()));
         let mut snapshot = crate::backend::empty_session_snapshot();
-        let replies = crate::parallel::map(&sessions, |item| {
-            protocol::call_typed(&item.socket_path, request)
+        // Read through the same generation-checked Lua boundary as each bridge,
+        // then enumerate the host's processes once for the whole collection.
+        let replies = crate::parallel::map(&sessions, |(_, instance)| {
+            crate::backend::snapshot(instance)
         });
-        for (item, reply) in sessions.iter().zip(replies) {
-            let reply = match reply {
+        let rows = if sessions.is_empty() {
+            vec![]
+        } else {
+            crate::process::snapshot()?
+        };
+        for ((item, _), reply) in sessions.iter().zip(replies) {
+            let mut source = match reply {
                 Ok(reply) => reply,
                 Err(_) if session::inspect_bridge(&item.socket_path).is_err() => continue,
                 Err(error) => return Err(error),
             };
-            let ResponseResult::SessionSnapshot { snapshot: source } = reply.result else {
-                anyhow::bail!("invalid session snapshot");
-            };
-            let mut source = source;
+            crate::backend::enrich_agents(&mut source, &rows);
+            let mut source = crate::backend::project_session(source);
             let focused = selected.as_deref() == Some(&item.name);
             for ws in &mut source.workspaces {
                 ws.focused &= focused;

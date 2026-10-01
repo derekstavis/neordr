@@ -78,6 +78,21 @@ The [October 1 audit](audits/2026-10-01-performance.md) documents the baseline a
 not yet persist per-request latency metrics in production; Moshi's historical
 HTTP timings are not a substitute for Neordr command measurements.
 
+To separate actual Moshi gateway latency from Neordr RPC latency, install
+`moshi-hook` and run the isolated fixture:
+
+```sh
+NEORDR_BIN=target/release/neordr python3 tests/moshi_performance.py --editors 6 --samples 10 --output /tmp/neordr-moshi-performance.json
+```
+
+It measures workspace/pane lookup, focus, synthetic Claude/Codex transcript
+backlogs, and a fresh control-mode terminal connection. Method-only traces show
+router and bridge calls; nested durations overlap and must not be summed as wall
+time. It never reads real conversations or attaches to a real workspace. These
+are protocol timings, not Term/Chat click-to-paint timings. The
+[view-switching audit](audits/2026-10-01-view-switching.md) records the distinction
+and the installed desktop's switch behavior.
+
 ## Plugin development
 
 The source checkout is a standard Neovim plugin. Add its root to `runtimepath`

@@ -162,6 +162,43 @@ pub fn empty_session_snapshot() -> SessionSnapshot {
         agents: vec![],
     }
 }
+
+/// Enrich a fresh editor read with a process table owned by this request.
+/// The router shares this table across editors; it never caches mutation targets.
+pub fn enrich_agents(snapshot: &mut Snapshot, rows: &[process::Process]) {
+    for pane in &mut snapshot.panes {
+        pane.info.agent = process::foreground(pane, rows)
+            .iter()
+            .find_map(process::agent)
+            .map(str::to_owned);
+    }
+}
+
+pub fn project_session(snapshot: Snapshot) -> SessionSnapshot {
+    let mut s = empty_session_snapshot();
+    s.workspaces = snapshot.workspaces;
+    s.tabs = snapshot.tabs;
+    s.layouts = snapshot.layouts;
+    s.panes = snapshot.panes.into_iter().map(|p| p.info).collect();
+    s.agents = s
+        .panes
+        .iter()
+        .filter(|p| p.agent.is_some())
+        .map(agent_info)
+        .collect();
+    s.focused_workspace_id = s
+        .workspaces
+        .iter()
+        .find(|w| w.focused)
+        .map(|w| w.workspace_id.clone());
+    s.focused_tab_id = s.tabs.iter().find(|t| t.focused).map(|t| t.tab_id.clone());
+    s.focused_pane_id = s
+        .panes
+        .iter()
+        .find(|p| p.focused)
+        .map(|p| p.pane_id.clone());
+    s
+}
 fn keys(keys: &[String]) -> Result<String> {
     let mut bytes = String::new();
     for key in keys {
@@ -319,6 +356,16 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
         unreachable!()
     };
     let mut snapshot = snapshot(instance)?;
+    // Editor buffers have no terminal process tree to inspect. Moshi asks for
+    // process metadata on those panes too; an empty result needs no host scan.
+    if let Method::PaneProcessInfo(p) = method {
+        let pane = find(&snapshot.panes, p.pane_id.as_deref())?;
+        if pane.neordr.shell_pid.is_none() {
+            return Ok(ResponseResult::PaneProcessInfo {
+                process_info: process::info(pane, &[]),
+            });
+        }
+    }
     if matches!(
         method,
         Method::SessionSnapshot(_)
@@ -328,12 +375,7 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
             | Method::PaneProcessInfo(_)
     ) {
         let rows = process::snapshot()?;
-        for pane in &mut snapshot.panes {
-            pane.info.agent = process::foreground(pane, &rows)
-                .iter()
-                .find_map(process::agent)
-                .map(str::to_owned);
-        }
+        enrich_agents(&mut snapshot, &rows);
         if let Method::PaneProcessInfo(p) = method {
             return Ok(ResponseResult::PaneProcessInfo {
                 process_info: process::info(find(&snapshot.panes, p.pane_id.as_deref())?, &rows),
@@ -341,33 +383,9 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
         }
     }
     Ok(match method {
-        Method::SessionSnapshot(_) => {
-            let mut s = empty_session_snapshot();
-            s.workspaces = snapshot.workspaces;
-            s.tabs = snapshot.tabs;
-            s.layouts = snapshot.layouts;
-            s.panes = snapshot.panes.into_iter().map(|p| p.info).collect();
-            s.agents = s
-                .panes
-                .iter()
-                .filter(|p| p.agent.is_some())
-                .map(agent_info)
-                .collect();
-            s.focused_workspace_id = s
-                .workspaces
-                .iter()
-                .find(|w| w.focused)
-                .map(|w| w.workspace_id.clone());
-            s.focused_tab_id = s.tabs.iter().find(|t| t.focused).map(|t| t.tab_id.clone());
-            s.focused_pane_id = s
-                .panes
-                .iter()
-                .find(|p| p.focused)
-                .map(|p| p.pane_id.clone());
-            ResponseResult::SessionSnapshot {
-                snapshot: Box::new(s),
-            }
-        }
+        Method::SessionSnapshot(_) => ResponseResult::SessionSnapshot {
+            snapshot: Box::new(project_session(snapshot)),
+        },
         Method::WorkspaceList(_) => ResponseResult::WorkspaceList {
             workspaces: snapshot.workspaces,
         },

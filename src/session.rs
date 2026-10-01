@@ -67,6 +67,14 @@ pub fn inspect_bridge(socket: &Path) -> Result<Instance> {
 }
 
 pub fn bridges(config: &Path) -> Result<Vec<SessionInfo>> {
+    Ok(live_bridges(config)?
+        .into_iter()
+        .map(|(session, _)| session)
+        .collect())
+}
+
+/// Retain the freshly verified editor identity for request-scoped reads.
+pub fn live_bridges(config: &Path) -> Result<Vec<(SessionInfo, Instance)>> {
     let root = config.join("herdr/sessions");
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
@@ -95,11 +103,11 @@ pub fn bridges(config: &Path) -> Result<Vec<SessionInfo>> {
         });
     }
     sessions.sort_by(|a, b| a.name.cmp(&b.name));
-    let live = crate::parallel::map(&sessions, |s| inspect_bridge(&s.socket_path).is_ok());
+    let live = crate::parallel::map(&sessions, |s| inspect_bridge(&s.socket_path).ok());
     Ok(sessions
         .into_iter()
         .zip(live)
-        .filter_map(|(s, live)| live.then_some(s))
+        .filter_map(|(s, instance)| instance.map(|instance| (s, instance)))
         .collect())
 }
 
