@@ -356,15 +356,12 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
         unreachable!()
     };
     let mut snapshot = snapshot(instance)?;
-    // Editor buffers have no terminal process tree to inspect. Moshi asks for
-    // process metadata on those panes too; an empty result needs no host scan.
     if let Method::PaneProcessInfo(p) = method {
         let pane = find(&snapshot.panes, p.pane_id.as_deref())?;
-        if pane.neordr.shell_pid.is_none() {
-            return Ok(ResponseResult::PaneProcessInfo {
-                process_info: process::info(pane, &[]),
-            });
-        }
+        let rows = process::snapshot_for(pane)?;
+        return Ok(ResponseResult::PaneProcessInfo {
+            process_info: process::info(pane, &rows),
+        });
     }
     if matches!(
         method,
@@ -372,15 +369,9 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
             | Method::AgentList(_)
             | Method::PaneList(_)
             | Method::PaneGet(_)
-            | Method::PaneProcessInfo(_)
     ) {
         let rows = process::snapshot()?;
         enrich_agents(&mut snapshot, &rows);
-        if let Method::PaneProcessInfo(p) = method {
-            return Ok(ResponseResult::PaneProcessInfo {
-                process_info: process::info(find(&snapshot.panes, p.pane_id.as_deref())?, &rows),
-            });
-        }
     }
     Ok(match method {
         Method::SessionSnapshot(_) => ResponseResult::SessionSnapshot {

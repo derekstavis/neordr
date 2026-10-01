@@ -665,6 +665,87 @@ fn default_router_targets_exactly_one_of_two_neovim_instances() {
 }
 
 #[test]
+fn scoped_process_info_preserves_foreground_group_members() {
+    let fixture = Fixture::new();
+    let _bridge = fixture.bridge();
+    let ready = fixture.root.join("detached-ready");
+    let script = fixture.root.join("codex");
+    // On Linux the child drops its controlling TTY but keeps its process group;
+    // ps -t would silently omit it. Darwin rejects TIOCNOTTY for this child, so
+    // there we check a normal multi-member foreground group. Parent-owned pipe
+    // EOF ensures the child exits if the terminal job is terminated.
+    fs::write(
+        &script,
+        r#"import os, signal, subprocess, sys
+r,w=os.pipe()
+code='''import fcntl, os, pathlib, sys, termios
+if sys.platform == 'linux': fcntl.ioctl(0, termios.TIOCNOTTY)
+pathlib.Path(sys.argv[2]).write_text(str(os.getpid()))
+os.read(int(sys.argv[1]), 1)
+'''
+subprocess.Popen([sys.executable,'-c',code,str(r),sys.argv[1]],pass_fds=(r,))
+os.close(r)
+while True: signal.pause()
+"#,
+    )
+    .unwrap();
+    nvim::exec_lua(
+        &fixture.socket,
+        "local script,ready=...; vim.fn.jobstart({'python3',script,ready},{term=true}); return true",
+        vec![
+            script.to_string_lossy().as_ref().into(),
+            ready.to_string_lossy().as_ref().into(),
+        ],
+    )
+    .unwrap();
+    wait_for(|| ready.exists());
+    let child: u32 = fs::read_to_string(ready).unwrap().parse().unwrap();
+    let instance = session::inspect_bridge(&fixture.endpoint()).unwrap();
+    let snapshot = neordr::backend::snapshot(&instance).unwrap();
+    let pane = &snapshot.panes[0];
+    let all = neordr::process::snapshot().unwrap();
+    let scoped = neordr::process::snapshot_for(pane).unwrap();
+    assert!(scoped.len() < all.len(), "expected a scoped process query");
+    let mut expected = neordr::process::info(pane, &all);
+    let mut actual = neordr::process::info(pane, &scoped);
+    expected.foreground_processes.sort_by_key(|p| p.pid);
+    actual.foreground_processes.sort_by_key(|p| p.pid);
+    assert!(actual.foreground_processes.iter().any(|p| p.pid == child));
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn process_info_falls_back_when_ps_does_not_support_scoped_selection() {
+    let fixture = Fixture::new();
+    let bin = fixture.root.join("bin");
+    fs::create_dir(&bin).unwrap();
+    fs::write(
+        bin.join("ps"),
+        "#!/bin/sh\n[ \"$1\" = '-axo' ] || exit 1\nexec /bin/ps \"$@\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(bin.join("ps"), fs::Permissions::from_mode(0o755)).unwrap();
+    let _bridge = Process(
+        fixture
+            .command()
+            .args(["--session", &fixture.session, "serve", "--nvim"])
+            .arg(&fixture.socket)
+            .env("PATH", &bin)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for(|| session::inspect_bridge(&fixture.endpoint()).is_ok());
+    let term = fixture.terminal("codex");
+    let info = fixture.rpc("pane.process_info", json!({"pane_id": term["pane"]}));
+    assert_eq!(
+        info["process_info"]["foreground_processes"][0]["name"],
+        "codex"
+    );
+}
+
+#[test]
 fn editor_only_process_info_does_not_require_process_enumeration() {
     let fixture = Fixture::new();
     let bin = fixture.root.join("bin");

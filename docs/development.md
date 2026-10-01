@@ -85,13 +85,16 @@ To separate actual Moshi gateway latency from Neordr RPC latency, install
 NEORDR_BIN=target/release/neordr python3 tests/moshi_performance.py --editors 6 --samples 10 --output /tmp/neordr-moshi-performance.json
 ```
 
-It measures workspace/pane lookup, focus, synthetic Claude/Codex transcript
+It measures workspace/pane lookup, per-pane process metadata, focus, synthetic Claude/Codex transcript
 backlogs, and a fresh control-mode terminal connection. Method-only traces show
-router and bridge calls; nested durations overlap and must not be summed as wall
-time. It never reads real conversations or attaches to a real workspace. These
+router and bridge calls, including their start/end offsets within each sample;
+nested durations overlap and must not be summed as wall time. It never reads
+real conversations or attaches to a real workspace. These
 are protocol timings, not Term/Chat click-to-paint timings. The
 [view-switching audit](audits/2026-10-01-view-switching.md) records the distinction
 and the installed desktop's switch behavior.
+The [pane-discovery audit](audits/2026-10-01-pane-discovery.md) isolates repeated
+process enumeration and Moshi's remaining agent-discovery work.
 
 ## Plugin development
 

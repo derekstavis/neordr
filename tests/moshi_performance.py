@@ -49,8 +49,9 @@ class RpcTrace:
                         peer.sendall(line)
                         with peer.makefile('rb') as reader:
                             reply = reader.readline(4 * 1024 * 1024)
+                    end = time.perf_counter()
                     records.append({'endpoint': path.parent.name, 'method': request['method'],
-                                    'ms': (time.perf_counter() - start) * 1000})
+                                    'start': start, 'end': end, 'ms': (end - start) * 1000})
                     self.wfile.write(reply)
                 except (OSError, ValueError):
                     pass  # Clients can close a readiness probe without a frame.
@@ -143,7 +144,11 @@ def main():
                     start = time.perf_counter()
                     observation = fn()
                     elapsed = (time.perf_counter() - start) * 1000
-                    batch = [r for t, offset in zip(traces, offsets) for r in t.records[offset:]]
+                    batch = [dict(r, start_ms=(r['start'] - start) * 1000,
+                                  end_ms=(r['end'] - start) * 1000)
+                             for t, offset in zip(traces, offsets) for r in t.records[offset:]]
+                    for record in batch:
+                        del record['start'], record['end']
                     cleanup()  # Exclude UI detachment from readiness time.
                     if i == 0:
                         first = elapsed
@@ -164,6 +169,8 @@ def main():
                 return len(json.dumps(body))
 
             measure('router.snapshot', lambda: len(rpc(router, 'session.snapshot')['snapshot']['workspaces']))
+            measure('router.process_info', lambda: len(rpc(router, 'pane.process_info',
+                {'pane_id': rig.agents['codex']['pane']})['process_info']['foreground_processes']))
             measure('gateway.workspaces', lambda: get('/v1/workspaces?mux=herdr:default'))
             _, tree = http(rig.port, '/v1/workspaces?mux=herdr:default')
             pane = rig.agents['codex']['pane']
