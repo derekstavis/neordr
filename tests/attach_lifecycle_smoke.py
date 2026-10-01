@@ -71,18 +71,27 @@ def main():
                 'time.sleep(120)\n')
             peer.chmod(0o755)
             fake_env = {**env,'PATH':str(fake)+os.pathsep+env['PATH']}
-            for case in ['lossless', 'blocked-output-sigterm']:
+            for case in ['lossless', 'outer-write-before-read', 'blocked-output-sigterm']:
                 for path in [root/'peer.pid',root/'received',root/'go']:path.unlink(missing_ok=True)
                 attached, master, reader = outer([str(BIN),'--session','ui'], fake_env, drain=case=='lossless')
                 writer = None
                 try:
                     eventually((root/'peer.pid').exists)
-                    if case == 'lossless':
+                    if case in ['lossless', 'outer-write-before-read']:
+                        output=[]
                         def send():
                             try:
                                 remaining=payload
                                 while remaining:
                                     n=os.write(master,remaining);remaining=remaining[n:]
+                                # Like Mosh's synchronous PTY write: it cannot
+                                # read terminal output until this write finishes.
+                                if case == 'outer-write-before-read':
+                                    remaining=7*150000
+                                    while remaining:
+                                        data=os.read(master,min(65536,remaining))
+                                        if not data:break
+                                        output.append(data);remaining-=len(data)
                             except OSError: pass
                         writer=threading.Thread(target=send,daemon=True);writer.start()
                         time.sleep(.2) # Fill UI input before allowing its output burst.
@@ -90,6 +99,8 @@ def main():
                         eventually((root/'received').exists,seconds=10)
                         assert (root/'received').read_text()==hashlib.sha256(payload).hexdigest()
                         writer.join(timeout=2);assert not writer.is_alive()
+                        if case == 'outer-write-before-read':
+                            assert b''.join(output)==b'OUTPUT-'*150000
                     else:
                         (root/'go').touch()
                         time.sleep(.3) # Let the unattended outer PTY fill.

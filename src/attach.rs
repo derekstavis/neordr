@@ -8,6 +8,8 @@ use crate::{
 };
 use anyhow::{Context, Result, ensure};
 use std::{
+    cell::RefCell,
+    collections::VecDeque,
     fs::File,
     io::{self, Read},
     os::{
@@ -57,7 +59,10 @@ struct Connection {
     stopped: Arc<AtomicBool>,
     parent: libc::pid_t,
     stdout_flags: libc::c_int,
+    input: RefCell<VecDeque<u8>>,
 }
+
+const MAX_PENDING_INPUT: usize = 4 * 1024 * 1024;
 impl Connection {
     fn new(stopped: Arc<AtomicBool>) -> Result<Self> {
         let stdout_flags = unsafe { libc::fcntl(1, libc::F_GETFL) };
@@ -70,7 +75,49 @@ impl Connection {
             stopped,
             parent: unsafe { libc::getppid() },
             stdout_flags,
+            input: RefCell::new(VecDeque::new()),
         })
+    }
+
+    fn has_input(&self) -> bool {
+        !self.input.borrow().is_empty()
+    }
+
+    fn take_input(&self, buffer: &mut [u8]) -> usize {
+        let mut input = self.input.borrow_mut();
+        let count = buffer.len().min(input.len());
+        for (target, byte) in buffer.iter_mut().zip(input.drain(..count)) {
+            *target = byte;
+        }
+        count
+    }
+
+    // Mosh can synchronously write a burst of terminal input before reading
+    // output again. Keep draining that input while stdout is backpressured.
+    // Decode it later in the main loop so gestures and text stay in order.
+    fn buffer_input(&self) -> io::Result<()> {
+        let mut bytes = [0u8; 16384];
+        let available = MAX_PENDING_INPUT - self.input.borrow().len();
+        if available == 0 {
+            return Err(io::Error::other("attachment input backlog exceeds limit"));
+        }
+        let count = available.min(bytes.len());
+        match io::stdin().read(&mut bytes[..count]) {
+            Ok(0) => Err(io::ErrorKind::BrokenPipe.into()),
+            Ok(n) => {
+                self.input.borrow_mut().extend(&bytes[..n]);
+                Ok(())
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn closed(&self) -> bool {
@@ -117,7 +164,7 @@ impl Connection {
                 },
                 libc::pollfd {
                     fd: 0,
-                    events: 0,
+                    events: libc::POLLIN,
                     revents: 0,
                 },
                 libc::pollfd {
@@ -138,6 +185,9 @@ impl Connection {
                 .any(|f| f.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
             {
                 return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            if fds[1].revents & libc::POLLIN != 0 {
+                self.buffer_input()?;
             }
             if fds[2].revents & libc::POLLIN != 0 {
                 let mut output = [0u8; 16384];
@@ -439,7 +489,8 @@ fn run_connected(
                     revents: 0,
                 },
             ];
-            if unsafe { libc::poll(fds.as_mut_ptr(), 2, 30) } < 0 {
+            let timeout = if connection.has_input() { 0 } else { 30 };
+            if unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout) } < 0 {
                 let error = io::Error::last_os_error();
                 if error.kind() == io::ErrorKind::Interrupted {
                     continue;
@@ -474,8 +525,13 @@ fn run_connected(
                     Err(e) => return Err(e.into()),
                 }
             }
-            let events = if fds[0].revents & libc::POLLIN != 0 {
-                let n = match io::stdin().read(&mut buffer) {
+            let queued = connection.take_input(&mut buffer);
+            let events = if queued > 0 || fds[0].revents & libc::POLLIN != 0 {
+                let n = match if queued > 0 {
+                    Ok(queued)
+                } else {
+                    io::stdin().read(&mut buffer)
+                } {
                     Ok(n) => n,
                     Err(e)
                         if matches!(
