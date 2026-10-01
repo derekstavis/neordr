@@ -86,18 +86,21 @@ pub fn bridges(config: &Path) -> Result<Vec<SessionInfo>> {
             continue;
         }
         let socket = socket_path(config, &name)?;
-        if inspect_bridge(&socket).is_ok() {
-            sessions.push(SessionInfo {
-                name,
-                default: false,
-                running: true,
-                socket_path: socket,
-                session_dir: entry.path(),
-            });
-        }
+        sessions.push(SessionInfo {
+            name,
+            default: false,
+            running: true,
+            socket_path: socket,
+            session_dir: entry.path(),
+        });
     }
     sessions.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(sessions)
+    let live = crate::parallel::map(&sessions, |s| inspect_bridge(&s.socket_path).is_ok());
+    Ok(sessions
+        .into_iter()
+        .zip(live)
+        .filter_map(|(s, live)| live.then_some(s))
+        .collect())
 }
 
 /// The default session groups all registered editor workspaces. Per-editor

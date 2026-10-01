@@ -129,6 +129,7 @@ while True:
             .args(["--headless", "-u", "NONE", "-i", "NONE", "--listen"])
             .arg(&socket)
             .env("NVIM_LOG_FILE", root.join("nvim.log"))
+            .env("XDG_STATE_HOME", root.join("state"))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(fs::File::create(root.join("nvim.stderr")).unwrap())
@@ -1087,7 +1088,10 @@ fn router_launcher_retries_a_dropped_health_probe() {
 
 #[test]
 fn partial_router_request_does_not_block_health_checks() {
-    use std::{io::Write, os::unix::net::UnixStream};
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::net::UnixStream,
+    };
     let fixture = Fixture::new();
     let _router = Process(
         fixture
@@ -1115,6 +1119,19 @@ fn partial_router_request_does_not_block_health_checks() {
     .unwrap();
     assert_eq!(reply["neordr_router"], true);
     assert!(now.elapsed() < Duration::from_millis(500));
+    // The worker must also finish the fragmented request. On Darwin, accepted
+    // sockets inherit nonblocking mode unless explicitly reset in the worker.
+    partial
+        .write_all(b"\"fragmented\",\"method\":\"ping\",\"params\":{}}\n")
+        .unwrap();
+    partial
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(partial).read_line(&mut line).unwrap();
+    let reply: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(reply["id"], "fragmented");
+    assert_eq!(reply["result"]["neordr_router"], true);
 }
 
 #[test]

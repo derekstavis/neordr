@@ -80,7 +80,7 @@ pub fn foreground(pane: &Pane, rows: &[Process]) -> Vec<Process> {
         return vec![];
     };
     rows.iter()
-        .filter(|p| descendant(p, root, rows) && p.group == group)
+        .filter(|p| p.group == group && descendant(p, root, rows))
         .cloned()
         .collect()
 }

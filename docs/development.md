@@ -57,6 +57,27 @@ checks lossless forwarding and blocked-output cancellation, and verifies that
 signals, terminal hangup, and parent death release a narrow UI while preserving
 the editor and terminal jobs. Inspect `.github/workflows/ci.yml` for the CI checks.
 
+## Performance measurements
+
+Run the opt-in fixture with a release build and no competing build/test workload:
+
+```sh
+cargo build --release --locked
+python3 tests/performance.py --bin target/release/neordr --editors 6 --samples 20 --output /tmp/neordr-performance.json
+```
+
+It creates disposable editors and terminals, times bridge/router RPCs, a CLI
+command, four simultaneous snapshot requests, and named/default attachment
+rendering. It records raw samples, median/p95, platform, and binary hash. The
+attachment metric runs from process spawn completion until a known editor line
+arrives; it excludes cleanup, network, SSH/Mosh setup, and client painting.
+Timings are diagnostic, not machine-dependent CI thresholds. Compare the same
+fixture and host conditions; the fixture never attaches to a real workspace.
+
+The [October 1 audit](audits/2026-10-01-performance.md) documents the baseline and optimized results. Neordr does
+not yet persist per-request latency metrics in production; Moshi's historical
+HTTP timings are not a substitute for Neordr command measurements.
+
 ## Plugin development
 
 The source checkout is a standard Neovim plugin. Add its root to `runtimepath`

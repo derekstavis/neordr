@@ -11,6 +11,26 @@ use serde_json::{Value, json};
 
 pub const MAX_FRAME: usize = 64 * 1024;
 
+/// Wake immediately for API or interactive clients. Timeout bounds lifecycle
+/// checks without delaying an arriving connection.
+pub fn wait_for_client(listeners: &[std::os::fd::RawFd]) -> std::io::Result<()> {
+    let mut fds: Vec<_> = listeners
+        .iter()
+        .map(|&fd| libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        })
+        .collect();
+    if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, 100) } < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     pub id: String,

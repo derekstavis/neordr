@@ -181,8 +181,11 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         let selected =
             crate::selection::current(config)?.or_else(|| sessions.first().map(|s| s.name.clone()));
         let mut snapshot = crate::backend::empty_session_snapshot();
-        for item in &sessions {
-            let reply = match protocol::call_typed(&item.socket_path, request) {
+        let replies = crate::parallel::map(&sessions, |item| {
+            protocol::call_typed(&item.socket_path, request)
+        });
+        for (item, reply) in sessions.iter().zip(replies) {
+            let reply = match reply {
                 Ok(reply) => reply,
                 Err(_) if session::inspect_bridge(&item.socket_path).is_err() => continue,
                 Err(error) => return Err(error),
@@ -407,6 +410,7 @@ pub fn serve(config: &Path) -> Result<()> {
     });
     eprintln!("neordr session listening on {}", path.display());
     while !stop.load(Ordering::Relaxed) {
+        protocol::wait_for_client(&[listener.as_raw_fd(), clients.as_raw_fd()])?;
         match clients.accept() {
             Ok((stream, _)) if active_clients.load(Ordering::Relaxed) < 8 => {
                 active_clients.fetch_add(1, Ordering::Relaxed);
@@ -439,6 +443,9 @@ pub fn serve(config: &Path) -> Result<()> {
                 let active = active.clone();
                 let config = config.to_owned();
                 thread::spawn(move || {
+                    // Darwin inherits O_NONBLOCK from the listener. Worker I/O
+                    // uses deadlines, not EAGAIN as an end-of-request marker.
+                    let _ = stream.set_nonblocking(false);
                     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                     let frame = protocol::read_frame(&mut BufReader::new(&mut stream));
@@ -452,9 +459,7 @@ pub fn serve(config: &Path) -> Result<()> {
                     active.fetch_sub(1, Ordering::Relaxed);
                 });
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(20))
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.into()),
         }
     }

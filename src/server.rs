@@ -101,6 +101,7 @@ pub fn serve(socket: &Path, nvim_socket: &Path) -> Result<()> {
         if !nvim_socket.exists() {
             break;
         }
+        protocol::wait_for_client(&[listener.as_raw_fd(), clients.as_raw_fd()])?;
         match clients.accept() {
             Ok((stream, _)) if active_clients.load(Ordering::Relaxed) < 8 => {
                 active_clients.fetch_add(1, Ordering::Relaxed);
@@ -136,9 +137,7 @@ pub fn serve(socket: &Path, nvim_socket: &Path) -> Result<()> {
                     active.fetch_sub(1, Ordering::Relaxed);
                 });
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(20));
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(e) => return Err(e.into()),
         }
     }

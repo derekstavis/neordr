@@ -13,6 +13,7 @@ pub mod endpoint;
 pub mod gestures;
 pub mod nvim;
 pub mod ordering;
+mod parallel;
 pub mod process;
 pub mod protocol;
 pub mod router;

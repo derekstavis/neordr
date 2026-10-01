@@ -3,6 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export TERM=xterm-256color
+export XDG_STATE_HOME
+XDG_STATE_HOME=$(mktemp -d /tmp/neordr-check-state-XXXXXX)
+trap 'rm -rf "$XDG_STATE_HOME"' EXIT
 unset NEORDR_NVIM_CONFIG NEORDR_CONFIG_OVERLAY NVIM HERDR_SESSION HERDR_ENV HERDR_PANE_ID
 command -v nvim >/dev/null
 nvim --headless -u NONE -i NONE '+lua assert(vim.fn.has("nvim-0.12") == 1, "Neovim 0.12+ required")' +qa
