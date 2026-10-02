@@ -114,6 +114,66 @@ preserving byte order, input responsiveness, and backpressure. Do not add a
 fixed frame delay or another full-screen diff layer before measuring that case.
 Native Herdr surface patches remain a separate useful optimization.
 
+## Follow-up: factory-midi.md and intermittent behavior
+
+The user narrowed the symptom to scrolling
+`zoom-l6-max-study/analysis/factory-midi.md`, hosted on this Mac. Disabling
+hardware acceleration made no noticeable difference, and the slowdown later
+disappeared without an identified fix. Treat the cause as **unresolved and
+intermittent**; neither WebGL nor a deterministic server-side stall was proven.
+
+The file has 229 lines, 11,244 bytes, 50 table rows, and a longest line of 132
+characters. Live read-only inspection found Tree-sitter highlighting and
+`render-markdown.nvim` decorations, wrapping, conceal level 3, indent folding,
+cursor-line highlighting, and a split containing a terminal. At inspection time
+the editor reported only its 216×54 local UI, not an observable large Moshi UI.
+No live scrolling or settings changes were injected.
+
+An additional disposable fixture loaded the exact file, installed local
+Markdown parsers, Gruvbox, and the Markdown renderer's normal plugin entrypoint.
+It verified nonzero render-markdown extmarks (44 at the small size, 410 at the
+large size). It used one full-width file window and enabled relative numbers,
+cursor-line highlighting, and column 72. These are selected configuration
+features, not a recreation of every plugin or the live split layout.
+
+Sixty input-driven scroll actions, thirty down and thirty up, moved three lines
+each. A fixed marker in the command area identified output arrival; a 25 ms
+settling interval also collected delayed decoration output. The fixture's
+acknowledgements were immediate and no desktop renderer was involved.
+
+| File-window test size | Input-to-marker median / p95 | Median ANSI bytes per action, including settling interval |
+| --- | ---: | ---: |
+| 120×36 | 1.61 / 2.51 ms | 14,091 |
+| 480×144 | 7.32 / 17.49 ms | 140,998 |
+
+The 60 actions generated 0.78 MB and 4.96 MB respectively; these totals include
+actions near document boundaries and are not obtained by multiplying the
+median. This is substantially more output than the plain-text synthetic scroll
+test above. Decoration/gutter/style changes can require repainting more than a
+newly exposed row even though the transport is incremental.
+
+Disabling relative numbers or cursor-line highlighting independently barely
+changed the large-case volume. Removing the color column reduced it to about
+132 KB/action; removing all three reduced it to about 127 KB/action and did not
+improve the measured median latency. These runs do not justify changing the
+user's editor preferences. An earlier trial omitted the plugin entrypoint and
+therefore is not evidence about active Markdown rendering; only the final
+extmark-verified results are reported here.
+
+This establishes a screen-size-sensitive traffic source, **not** the cause of
+the intermittent stall. During the next occurrence, capture these concurrently:
+
+1. A bounded read-only editor RPC latency and editor process CPU/stack sample,
+   to distinguish a blocked Neovim/plugin path from quick editor responses.
+2. The actual connected UI sizes/identities and Moshi terminal transport mode.
+3. Moshi WebView processing time plus output bytes awaiting acknowledgement,
+   to distinguish a renderer/parser backlog from the relay/network path.
+
+Compare the same large window and file after recovery. Avoid restarting services
+or changing multiple options before collecting the slow-state evidence.
+Final exact-file artifact: `/private/tmp/neordr-markdown-gutters.json`;
+diagnostic script: `/private/tmp/neordr-markdown-gutters.py`.
+
 ## Reproduction
 
 ```sh
