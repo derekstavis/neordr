@@ -96,6 +96,20 @@ and the installed desktop's switch behavior.
 The [pane-discovery audit](audits/2026-10-01-pane-discovery.md) isolates repeated
 process enumeration and Moshi's remaining agent-discovery work.
 
+For terminal-size scaling, compare direct Neovim remote UI, Neordr control,
+and both Moshi gateway modes on disposable editors:
+
+```sh
+NEORDR_BIN=target/release/neordr python3 tests/terminal_performance.py --output /tmp/neordr-terminal-performance.json
+```
+
+This measures input-to-ANSI arrival and output volume at 120×36, 240×72, and
+480×144 cells. It excludes desktop painting and remote network latency, and
+acknowledges WebSocket output immediately. Use `--modes gateway-whole` to select
+only full-editor Moshi attachment. The
+[large-terminal audit](audits/2026-10-02-large-terminal.md) explains the separate
+native Herdr full-grid path and the measured incremental Moshi path.
+
 ## Plugin development
 
 The source checkout is a standard Neovim plugin. Add its root to `runtimepath`
