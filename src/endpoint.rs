@@ -2,6 +2,7 @@
 mod grid;
 mod input;
 mod projection;
+mod surface;
 mod ui;
 mod wire;
 use crate::{
@@ -215,7 +216,7 @@ pub fn handle(stream: UnixStream, target: Target, stop: Arc<AtomicBool>) -> Resu
         input_codec: INPUT_CODEC_V1.into(),
         blob_codec: BLOB_CODEC_V1.into(),
         methods: METHODS.iter().map(|s| (*s).into()).collect(),
-        capabilities: vec![],
+        capabilities: vec![surface::CAPABILITY.into()],
         error: (!compatible).then(|| EndpointHandshakeError {
             code: "incompatible_endpoint".into(),
             message: "Neordr requires Herdr endpoint generation 1".into(),
@@ -224,6 +225,7 @@ pub fn handle(stream: UnixStream, target: Target, stop: Arc<AtomicBool>) -> Resu
     wire::control(&mut client.0, ENDPOINT_WELCOME_KIND, &welcome)?;
     ensure!(compatible, "unsupported Herdr endpoint codecs");
     let mut size = dimensions(hello.surface_size.cols, hello.surface_size.rows)?;
+    let mut surfaces = surface::Stream::new(hello.surface_scroll);
     let boot = format!(
         "neordr-{}-{}",
         std::process::id(),
@@ -483,9 +485,9 @@ pub fn handle(stream: UnixStream, target: Target, stop: Arc<AtomicBool>) -> Resu
                 })
                 .into_iter()
                 .collect();
-            wire::send(
+            surfaces.send(
                 &mut client.0,
-                &ServerMessage::PaneSurface(wire::Surface {
+                wire::Surface {
                     boot_id: boot.clone(),
                     projection_revision,
                     surface_revision,
@@ -501,7 +503,8 @@ pub fn handle(stream: UnixStream, target: Target, stop: Arc<AtomicBool>) -> Resu
                     splits: vec![],
                     popup: None,
                     graphics: wire::Graphics::default(),
-                }),
+                },
+                epoch,
             )?;
             grid.dirty = false;
             last_frame = Instant::now();

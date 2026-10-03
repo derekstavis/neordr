@@ -14,7 +14,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='neordr-control-', dir='/tmp') as directory:
         root = Path(directory).resolve()
         env = {k:v for k,v in os.environ.items() if k != 'NVIM' and not k.startswith(('HERDR_', 'NEORDR_'))}
-        env.update(XDG_CONFIG_HOME=str(root/'config'), NVIM_LOG_FILE=str(root/'nvim.log'), TERM='xterm-256color')
+        env.update(XDG_STATE_HOME=str(root/'state'), XDG_CONFIG_HOME=str(root/'config'), NVIM_LOG_FILE=str(root/'nvim.log'), TERM='xterm-256color')
         address, endpoint = root/'nvim.sock', root/'config/herdr/sessions/control/herdr.sock'
         processes=[]
         try:
@@ -51,7 +51,18 @@ def main():
                     eventually(lambda:lua(env,address,'return vim.o.columns')=='103')
                     send({'type':'terminal.input','bytes':base64.b64encode(b'\x1c\x0e:enew\r:lua vim.api.nvim_buf_set_lines(0,0,-1,false,{"FULL_EDITOR"})\r').decode()})
                     eventually(lambda:lua(env,address,'return vim.api.nvim_get_current_line()')=='FULL_EDITOR')
-                    lua(env,address,"vim.o.mouse='a'; vim.o.scrolloff=0; local ls={}; for i=1,200 do ls[i]='row '..i end; vim.api.nvim_buf_set_lines(0,0,-1,false,ls); vim.api.nvim_win_set_cursor(0,{1,0}); return true")
+                    lua(env,address,"vim.cmd('only'); vim.o.mouse='a'; vim.o.mousetime=0; vim.o.scrolloff=0; local ls={}; for i=1,200 do ls[i]='row '..i end; vim.api.nvim_buf_set_lines(0,0,-1,false,ls); vim.api.nvim_win_set_cursor(0,{1,0}); vim.cmd('redraw'); return true")
+                    send({'type':'terminal.mouse','action':'down','button':'left','column':4,'row':2})
+                    send({'type':'terminal.mouse','action':'up','button':'left','column':4,'row':2})
+                    eventually(lambda:lua(env,address,'return vim.api.nvim_win_get_cursor(0)[1]')=='3')
+                    send({'type':'terminal.mouse','action':'move','column':8,'row':4})
+                    send({'type':'terminal.mouse','action':'down','column':4,'row':2})
+                    eventually(lambda:lua(env,address,'return vim.api.nvim_win_get_cursor(0)[1]')=='3')
+                    send({'type':'terminal.mouse','action':'drag','column':8,'row':4})
+                    eventually(lambda:lua(env,address,'return vim.api.nvim_win_get_cursor(0)[1]')=='5')
+                    send({'type':'terminal.mouse','action':'up','column':8,'row':4})
+                    send({'type':'terminal.input','bytes':base64.b64encode(b'\x1b').decode()})
+                    eventually(lambda:lua(env,address,'return vim.api.nvim_get_mode().mode')=='n')
                     send({'type':'terminal.scroll','direction':'down','lines':2})
                     eventually(lambda:int(lua(env,address,"return vim.fn.line('w0')"))>1)
                     send({'type':'terminal.scroll','direction':'up','lines':1,'source':'page_key'})

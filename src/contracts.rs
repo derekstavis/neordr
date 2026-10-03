@@ -56,7 +56,15 @@ mod tests {
         .unwrap();
         assert!(hello.surface_active);
         assert!(!hello.surface_reuse);
+        assert!(!hello.surface_scroll);
         assert!(!hello.supports_required_codecs());
+        let mut negotiated = serde_json::to_value(&hello).unwrap();
+        negotiated["surface_scroll"] = json!(true);
+        assert!(
+            serde_json::from_value::<endpoint::EndpointClientHello>(negotiated)
+                .unwrap()
+                .surface_scroll
+        );
         assert_eq!(
             serde_json::from_value::<popup_size::PopupSize>(json!("80%")).unwrap(),
             popup_size::PopupSize::Percent(80)
@@ -66,6 +74,69 @@ mod tests {
             serde_json::from_value::<wire::ClientShellCommandAction>(json!("FutureAction"))
                 .unwrap(),
             wire::ClientShellCommandAction::Unknown
+        );
+    }
+
+    #[test]
+    fn agent_resume_metadata_remains_typed_and_optional() {
+        let mut value = json!({"pane_id":"p", "source":"hook", "agent":"codex"});
+        let old: api::PaneReportAgentSessionParams = serde_json::from_value(value.clone()).unwrap();
+        assert!(old.resume_argv.is_none());
+        value["resume_argv"] = json!(["codex", "resume", "session"]);
+        let new: api::PaneReportAgentSessionParams = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(new.resume_argv.unwrap(), ["codex", "resume", "session"]);
+        value["resume_argv"] = json!([42]);
+        assert!(serde_json::from_value::<api::PaneReportAgentSessionParams>(value).is_err());
+    }
+
+    #[test]
+    fn graphics_bulk_codec_retains_byte_layout() {
+        use wire::*;
+        #[derive(serde::Serialize)]
+        struct LegacyAsset<'a> {
+            key: &'a SurfaceGraphicsAssetKey,
+            data: &'a Vec<u8>,
+        }
+        let asset = SurfaceGraphicsAsset {
+            key: SurfaceGraphicsAssetKey {
+                source: SurfaceGraphicsSource::Terminal {
+                    target: SurfaceGraphicsTarget::Pane {
+                        pane_id: "p".into(),
+                    },
+                    image_id: 7,
+                },
+                image_width: 256,
+                image_height: 256,
+                format: SurfaceGraphicsFormat::Rgba,
+                data_len: 65536,
+                data_fingerprint: 42,
+            },
+            data: (0..65536).map(|n| (n % 256) as u8).collect(),
+        };
+        let legacy = LegacyAsset {
+            key: &asset.key,
+            data: &asset.data,
+        };
+        let config = bincode::config::standard();
+        let bytes = bincode::serde::encode_to_vec(&asset, config).unwrap();
+        assert_eq!(
+            bytes,
+            bincode::serde::encode_to_vec(&legacy, config).unwrap()
+        );
+        let (decoded, used): (SurfaceGraphicsAsset, _) =
+            bincode::serde::decode_from_slice(&bytes, config).unwrap();
+        assert_eq!(decoded, asset);
+        assert_eq!(used, bytes.len());
+        assert_eq!(
+            serde_json::to_value(&asset).unwrap(),
+            serde_json::to_value(&legacy).unwrap()
+        );
+        assert!(
+            bincode::serde::decode_from_slice::<SurfaceGraphicsAsset, _>(
+                &bytes[..bytes.len() - 1],
+                config
+            )
+            .is_err()
         );
     }
 

@@ -24,7 +24,7 @@ initializing the submodule, builds can run offline.
 | `src/backend.rs`, `src/process.rs` | Typed Neovim backend operations and foreground process discovery. |
 | `src/control.rs`, `src/doctor.rs` | Typed control-mode CLI streaming and read-only integration diagnostics. |
 | `src/attach.rs` | PTY supervision, remote UI attachment, and shortcut translation. |
-| `src/endpoint/` | Herdr interactive protocol: framing, projection, input sequencing, UI ownership, and rendering. |
+| `src/endpoint/` | Herdr interactive protocol: framing, projection, input sequencing, UI ownership, rendering, and negotiated surface patches. |
 | `lua/neordr/` | Plugin setup, health checks, terminal identity, lifecycle, and optional adapters. |
 | `doc/neordr.txt` | Neovim help for commands, setup options, and adapter contracts. |
 | `build_support/`, `vendor/herdr` | Reviewed upstream contract extraction and source pin. |
@@ -111,6 +111,16 @@ acknowledges WebSocket output immediately. Use `--modes gateway-whole` to select
 only full-editor Moshi attachment. The
 [large-terminal audit](audits/2026-10-02-large-terminal.md) explains the separate
 native Herdr full-grid path and the measured incremental Moshi path.
+
+For native Herdr scroll encoding, run the isolated release-mode scaling diagnostic:
+
+```sh
+cargo test --release --lib endpoint::surface::tests::scaling -- --ignored --nocapture
+```
+
+It compares encoded bytes for a 480×150 grid with 1 and 15 panes and reports
+encoding time. It excludes Neovim grid construction, sockets, and client painting;
+it is not a Moshi latency measurement.
 
 ## Plugin development
 

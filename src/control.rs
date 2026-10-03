@@ -4,7 +4,10 @@ use crate::{
     contracts::{
         api::{Method, PaneTarget},
         terminal_control::terminal_control_command_from_json,
-        wire::{AttachScrollDirection, AttachScrollSource, ClientMessage},
+        wire::{
+            AttachScrollDirection, AttachScrollSource, ClientMessage, ClientMouseButton,
+            ClientMouseKind, ClientMousePosition,
+        },
     },
     protocol, session,
 };
@@ -207,6 +210,38 @@ fn scroll(
     .into_bytes()
 }
 
+fn mouse(kind: ClientMouseKind, position: ClientMousePosition, modifiers: u8) -> Result<Vec<u8>> {
+    use ClientMouseKind::*;
+    let button = |b| match b {
+        ClientMouseButton::Left => 0,
+        ClientMouseButton::Middle => 1,
+        ClientMouseButton::Right => 2,
+    };
+    let (code, suffix) = match kind {
+        Down(b) => (button(b), 'M'),
+        Up(b) => (button(b), 'm'),
+        Drag(b) => (button(b) + 32, 'M'),
+        Moved => (35, 'M'),
+        ScrollUp => (64, 'M'),
+        ScrollDown => (65, 'M'),
+        ScrollLeft => (66, 'M'),
+        ScrollRight => (67, 'M'),
+    };
+    let ClientMousePosition::Cell { column, row } = position else {
+        anyhow::bail!("control mouse requires cell coordinates")
+    };
+    let code = code
+        + if modifiers & 1 != 0 { 4 } else { 0 }
+        + if modifiers & 2 != 0 { 16 } else { 0 }
+        + if modifiers & 4 != 0 { 8 } else { 0 };
+    Ok(format!(
+        "\x1b[<{code};{};{}{suffix}",
+        u32::from(column) + 1,
+        u32::from(row) + 1
+    )
+    .into_bytes())
+}
+
 pub fn run(
     config: &Path,
     requested_session: Option<&str>,
@@ -350,6 +385,14 @@ pub fn run(
                             &scroll(source, direction, lines, column, row, modifiers),
                         )?;
                     }
+                    ClientMessage::AttachMouse {
+                        kind,
+                        position,
+                        modifiers,
+                        ..
+                    } => {
+                        enqueue(&mut input, &mouse(kind, position, modifiers)?)?;
+                    }
                     _ => anyhow::bail!("unsupported control command"),
                 }
             }
@@ -404,6 +447,36 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn upstream_mouse_commands_and_sgr_encoding() {
+        for (action, expected) in [
+            ("down", "\x1b[<30;5;9M"),
+            ("up", "\x1b[<30;5;9m"),
+            ("drag", "\x1b[<62;5;9M"),
+            ("move", "\x1b[<63;5;9M"),
+        ] {
+            let json = serde_json::json!({"type":"terminal.mouse","action":action,"button":"right","column":4,"row":8,"modifiers":7});
+            let ClientMessage::AttachMouse {
+                kind,
+                position,
+                modifiers,
+                ..
+            } = terminal_control_command_from_json(&json.to_string()).unwrap()
+            else {
+                panic!("expected mouse")
+            };
+            assert_eq!(
+                mouse(kind, position, modifiers).unwrap(),
+                expected.as_bytes()
+            );
+        }
+        assert!(
+            terminal_control_command_from_json(
+                r#"{"type":"terminal.mouse","action":"invalid","column":0,"row":0}"#
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn upstream_input_contract_rejects_ambiguous_or_corrupt_bytes() {
         assert!(

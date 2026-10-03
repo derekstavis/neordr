@@ -186,6 +186,25 @@ mod tests {
         );
     }
     #[test]
+    fn updated_codex_folder_access_and_plugin_picker_are_blocked() {
+        assert_eq!(
+            detect(
+                "codex",
+                "Folder access\nTrust this folder?\nCodex can read, edit, and run files here\nTrust and continue",
+                "Codex"
+            ),
+            Some("blocked")
+        );
+        assert_eq!(
+            detect(
+                "codex",
+                "All Results    Filesystem Only    Plugins",
+                "Codex"
+            ),
+            Some("blocked")
+        );
+    }
+    #[test]
     fn history_and_unmatched_text_do_not_complete_a_turn() {
         assert_eq!(detect("claude", "Ordinary response text", ""), None);
         assert_eq!(detect("shell", "Working", ""), None);

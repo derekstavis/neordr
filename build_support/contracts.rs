@@ -8,7 +8,7 @@ use quote::{ToTokens, quote};
 use std::{env, fs, path::Path, process::Command};
 use syn::{Item, visit_mut::VisitMut};
 
-const REVISION: &str = "28360107c1bfab57fb0de99d74bfa48e74423ca8";
+const REVISION: &str = "5da0a01e1eedda054db0c81dd3a780000c40d9f0";
 const ROOT: &str = "vendor/herdr";
 
 fn source(path: &str) -> syn::File {
@@ -187,14 +187,29 @@ pub fn generate() {
         .into_iter()
         .filter(|i| match i {
             Item::Struct(_) | Item::Enum(_) | Item::Type(_) | Item::Const(_) | Item::Use(_) => true,
-            Item::Fn(f) => f.sig.ident == "deserialize_client_shell_agent_status",
-            Item::Impl(i) => i
-                .trait_
-                .as_ref()
-                .is_some_and(|(_, p, _)| p.is_ident("Clone")),
+            Item::Fn(f) => [
+                "deserialize_client_shell_agent_status",
+                "serialize_graphics_bytes",
+                "deserialize_graphics_bytes",
+                "write_message",
+                "read_message",
+                "read_exact_or_eof",
+            ]
+            .contains(&f.sig.ident.to_string().as_str()),
+            Item::Impl(i) => {
+                i.self_ty.to_token_stream().to_string() == "FramingError"
+                    || i.trait_
+                        .as_ref()
+                        .is_some_and(|(_, p, _)| p.is_ident("Clone"))
+            }
             _ => false,
         })
         .collect();
+    let scroll = source("src/protocol/surface_scroll.rs")
+        .items
+        .into_iter()
+        .filter(|i| !is_test(i))
+        .collect::<Vec<_>>();
     let endpoint: Vec<_> = source("src/protocol/endpoint.rs")
         .items
         .into_iter()
@@ -223,7 +238,7 @@ pub fn generate() {
         .collect();
     assert_eq!(
         terminal_control.len(),
-        4,
+        6,
         "upstream terminal control contract changed"
     );
     let config = supporting_types(
@@ -250,7 +265,7 @@ pub fn generate() {
         }
         pub fn method_names() -> &'static [&'static str] { &[#(#method_names),*] }
         pub mod api { #(#api)* }
-        pub mod wire { #(#wire)* }
+        pub mod wire { #(#wire)* #[allow(clippy::chunks_exact_to_as_chunks)] pub(crate) mod surface_scroll { #(#scroll)* } }
         pub mod endpoint {
             use serde::{Deserialize, Serialize};
             use super::wire::ClientSurfaceSize;
@@ -258,7 +273,7 @@ pub fn generate() {
         }
         pub mod terminal_control {
             use base64::Engine;
-            use super::wire::{ClientMessage, AttachScrollDirection, AttachScrollSource};
+            use super::wire::{ClientMessage, AttachScrollDirection, AttachScrollSource, ClientMouseKind, ClientMouseButton, ClientMousePosition};
             #(#terminal_control)*
         }
         pub mod config { use serde::{Deserialize, Serialize}; #(#config)* }

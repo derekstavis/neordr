@@ -23,7 +23,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='neordr-herdr-', dir='/tmp') as directory:
         root = Path(directory).resolve()
         env = {k:v for k,v in os.environ.items() if not k.startswith('HERDR_') and k not in ['NVIM','TMUX','TMUX_PANE']}
-        env.update(XDG_CONFIG_HOME=str(root/'config'), TERM='xterm-256color', NVIM_LOG_FILE=str(root/'nvim.log'))
+        env.update(XDG_STATE_HOME=str(root/'state'), XDG_CONFIG_HOME=str(root/'config'), TERM='xterm-256color', NVIM_LOG_FILE=str(root/'nvim.log'))
         (root/'config/herdr').mkdir(parents=True)
         (root/'config/herdr/config.toml').write_text('onboarding = false\n')
         full_config = os.environ.get('NEORDR_NVIM_CONFIG')

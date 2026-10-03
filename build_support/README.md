@@ -2,7 +2,7 @@
 
 Neordr's contract definitions come from the unmodified
 [Herdr](https://github.com/herdrdev/herdr) Git submodule at
-`vendor/herdr`, pinned to `28360107c1bfab57fb0de99d74bfa48e74423ca8`.
+`vendor/herdr`, pinned to `5da0a01e1eedda054db0c81dd3a780000c40d9f0`.
 Herdr is licensed under Apache-2.0;
 retain [its license](../vendor/herdr/LICENSE) with distributions.
 
@@ -25,6 +25,12 @@ code. The generator relocates crate paths; it excludes upstream test modules and
 runtime-only conversions. Small supporting types are extracted by name from
 upstream config, input, agent-resume, and popup-size modules. Missing types or
 new external dependencies fail compilation; there is no untyped fallback.
+
+The optional `surface_scroll` codec is also extracted unchanged, including its
+framing helpers. Neordr computes changed cell spans and retains a baseline per
+connection; upstream code detects and encodes scroll shifts. Its wire layout is
+not reimplemented locally. A narrowly scoped Clippy allowance accommodates the
+pinned codec's `chunks_exact` implementation on our newer Rust toolchain.
 
 The submodule must be clean at the reviewed revision. To update the contract,
 review the upstream changes, move the submodule pin and the generator's revision

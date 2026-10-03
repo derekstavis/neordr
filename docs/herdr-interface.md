@@ -1,12 +1,15 @@
 # Herdr interface compatibility
 
-Validated with the unmodified macOS ARM64 binary supplied on September 22, 2026:
+Validated with unmodified macOS ARM64 Herdr clients:
 
-- Version: `0.9.1-preview.2026-09-21-0ff0f27e2226`.
-- SHA-256: `203d7b29599a8bafaf94ba476912e7173cac2fb73d2988492ae9abe4e0fb44da`.
-- Wire reference: Herdr's `src/protocol/wire.rs` and `endpoint.rs` at
-  `28360107c1bfab57fb0de99d74bfa48e74423ca8`. This reference revision differs
-  from the binary; compatibility is checked with the actual binary.
+- Stable `0.9.3`, SHA-256
+  `5173a3e0ae42d5d1ab7ebfa5d5e6329f7c3d23f8e1a3677c7ce3231da2884157`.
+- Previous `0.9.1-preview.2026-09-21-0ff0f27e2226`, SHA-256
+  `203d7b29599a8bafaf94ba476912e7173cac2fb73d2988492ae9abe4e0fb44da`.
+- Contracts and optional scroll codec come from upstream revision
+  `5da0a01e1eedda054db0c81dd3a780000c40d9f0` (October 3, 2026).
+  Upstream still specifies protocol **22**, endpoint generation **1**. Optional
+  capabilities extend that protocol without changing its version number.
 
 ## Connecting
 
@@ -78,16 +81,26 @@ warning; confirmations and other input prompts are never answered automatically.
 
 ## Current scope
 
-Named local sessions are supported. Default-router aggregation, SSH federation,
+Named sessions and default-router aggregation are supported. SSH federation,
 surface-interest negotiation, private direct-terminal attach, graphics blobs,
-clipboard-image upload, Herdr plugin/integration management, Herdr scrollback
-overlays, and Herdr-specific pane groups are not implemented. Unsupported
-operations return errors; unrecognized optional named controls are ignored.
-Neovim manages scrollback, windows, and editor behavior. Agent status retains
-Neordr's existing `unknown` value. Full frames are sent at up to 60 Hz; snapshot
-changes are polled at approximately 300 ms. Surface deltas are not advertised.
+clipboard-image upload, Herdr plugin/integration management, agent resume,
+Herdr scrollback overlays, and Herdr-specific pane groups are not implemented.
+Unsupported operations return errors; unrecognized optional named controls are
+ignored. Neovim manages scrollback, windows, and editor behavior. Agent activity
+uses upstream screen/title detection for discovered Claude and Codex processes;
+see [detection semantics](../build_support/README.md#agent-activity-detection).
 
-Moshi continues using its existing JSON API and Neovim remote-UI attachment.
+Surface updates run at up to 60 Hz; snapshots are polled approximately every
+300 ms. Clients negotiating `surface_scroll` receive changed-cell patches or
+upstream `endpoint.surface-scroll.v1` messages, whichever is smaller. Initial
+frames, topology/size changes, editor switches, and uneconomical patches use full
+frames. Baselines are private to each connection. Older clients retain full-frame
+delivery. The separate `surface_delta` and `surface_reuse` codecs are not advertised.
+
+Moshi continues using its existing JSON API and incremental Neovim remote-UI
+attachment; the native Herdr surface optimization does not alter that path.
+JSON control mode additionally accepts upstream `terminal.mouse` messages for
+clicks, releases, drags, and movement in zero-based editor cell coordinates.
 
 ## Validation
 
@@ -119,3 +132,6 @@ input, and subsequent input with the current target works.
 
 Rust tests cover fragmented/truncated/oversized frames, semantic key translation,
 colored and wide cells, scrolling, cursor positions, and grid allocation bounds.
+
+The [October 3 upstream audit](audits/2026-10-03-herdr-update.md) records the
+source update, negotiated features, compatibility checks, and scaling results.
