@@ -26,6 +26,10 @@ pub struct PaneMetadata {
     pub shell_pid: Option<u32>,
     #[serde(default)]
     pub tty: Option<String>,
+    #[serde(default)]
+    pub screen: String,
+    #[serde(default)]
+    pub activity: Option<crate::activity::State>,
 }
 #[derive(Debug, Deserialize)]
 pub struct Snapshot {
@@ -89,7 +93,7 @@ pub fn initialize(instance: &Instance, session: &str) -> Result<()> {
     // deferred mutation and can time out before the bridge opens its endpoint.
     if nvim::read_lua(
         &instance.socket,
-        "local p=package.loaded['neordr.backend']; return p ~= nil and p.session == ...",
+        "local p=package.loaded['neordr.backend']; return p ~= nil and p.activity_version == 1 and p.session == ...",
         vec![session.into()],
     )?
     .as_bool()
@@ -99,7 +103,7 @@ pub fn initialize(instance: &Instance, session: &str) -> Result<()> {
     }
     nvim::exec_lua(
         &instance.socket,
-        "local code,session=...; local key='neordr.backend'; if not package.loaded[key] then package.loaded[key]=assert(loadstring(code))() end; return package.loaded[key].configure(session)",
+        "local code,session=...; local key='neordr.backend'; if not package.loaded[key] or package.loaded[key].activity_version ~= 1 then package.loaded[key]=assert(loadstring(code))() end; return package.loaded[key].configure(session)",
         vec![
             include_str!("../lua/neordr/backend.lua").into(),
             session.into(),
@@ -179,13 +183,13 @@ pub fn project_session(snapshot: Snapshot) -> SessionSnapshot {
     s.workspaces = snapshot.workspaces;
     s.tabs = snapshot.tabs;
     s.layouts = snapshot.layouts;
-    s.panes = snapshot.panes.into_iter().map(|p| p.info).collect();
-    s.agents = s
+    s.agents = snapshot
         .panes
         .iter()
-        .filter(|p| p.agent.is_some())
+        .filter(|p| p.info.agent.is_some())
         .map(agent_info)
         .collect();
+    s.panes = snapshot.panes.into_iter().map(|p| p.info).collect();
     s.focused_workspace_id = s
         .workspaces
         .iter()
@@ -241,7 +245,8 @@ fn keys(keys: &[String]) -> Result<String> {
     }
     Ok(bytes)
 }
-fn agent_info(p: &PaneInfo) -> AgentInfo {
+fn agent_info(pane: &Pane) -> AgentInfo {
+    let p = &pane.info;
     AgentInfo {
         terminal_id: p.terminal_id.clone(),
         name: p.label.clone(),
@@ -261,8 +266,8 @@ fn agent_info(p: &PaneInfo) -> AgentInfo {
         focused: p.focused,
         launch_pending: false,
         interactive_ready: false,
-        state_change_seq: 0,
-        completion_seq: None,
+        state_change_seq: pane.neordr.activity.as_ref().map_or(0, |a| a.seq),
+        completion_seq: pane.neordr.activity.as_ref().and_then(|a| a.completion),
         cwd: p.cwd.clone(),
         foreground_cwd: p.foreground_cwd.clone(),
         revision: p.revision,
@@ -369,9 +374,12 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
             | Method::AgentList(_)
             | Method::PaneList(_)
             | Method::PaneGet(_)
+            | Method::WorkspaceList(_)
+            | Method::TabList(_)
     ) {
         let rows = process::snapshot()?;
         enrich_agents(&mut snapshot, &rows);
+        crate::activity::enrich(instance, &mut snapshot, &rows)?;
     }
     Ok(match method {
         Method::SessionSnapshot(_) => ResponseResult::SessionSnapshot {
@@ -404,7 +412,7 @@ pub fn dispatch(instance: &Instance, command: &Command) -> Result<ResponseResult
                 .panes
                 .iter()
                 .filter(|p| p.info.agent.is_some())
-                .map(|p| agent_info(&p.info))
+                .map(agent_info)
                 .collect(),
         },
         Method::PaneGet(p) => ResponseResult::PaneInfo {

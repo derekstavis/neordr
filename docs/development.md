@@ -20,6 +20,7 @@ initializing the submodule, builds can run offline.
 | `src/main.rs` | CLI and compatibility entry points. |
 | `src/api.rs`, `src/protocol.rs` | Typed application requests and JSON transport boundaries. |
 | `src/server.rs`, `src/router.rs` | Per-editor service and default cross-editor routing. |
+| `src/activity.rs` | Upstream screen/title detection and editor-owned activity observations. |
 | `src/backend.rs`, `src/process.rs` | Typed Neovim backend operations and foreground process discovery. |
 | `src/control.rs`, `src/doctor.rs` | Typed control-mode CLI streaming and read-only integration diagnostics. |
 | `src/attach.rs` | PTY supervision, remote UI attachment, and shortcut translation. |
@@ -38,6 +39,7 @@ See the [design notes](design.md) for mapping decisions and
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked -- --test-threads=2
+python3 tests/activity_smoke.py
 python3 tests/remote_ui_smoke.py
 python3 tests/default_attach_smoke.py
 python3 tests/gestures_smoke.py
@@ -135,6 +137,10 @@ archives. These tests use disposable synthetic agents and transcripts; they do
 not call an LLM or require real conversations.
 
 ### Moshi gateway
+
+`python3 tests/activity_smoke.py --moshi` checks working/done statuses and
+transition ordering through the actual gateway in an isolated fixture.
+
 
 ```sh
 export MOSHI_HOOK_BIN=/path/to/moshi-hook

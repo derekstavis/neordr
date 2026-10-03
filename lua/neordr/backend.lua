@@ -1,5 +1,8 @@
 local M = type(package.loaded['neordr.backend']) == 'table' and package.loaded['neordr.backend']
   or { session = nil, next_pane = 0 }
+M.activity_version = 1
+M.agent_activity = M.agent_activity or {}
+M.activity_clock = M.activity_clock or 0
 M.launches = M.launches or {}
 M.gesture_markers = M.gesture_markers or {}
 M.gesture_results = M.gesture_results or {}
@@ -74,6 +77,56 @@ local function pane_layout(pane)
       panes = array({ { pane_id = pane.pane_id, focused = true, rect = rect } }), splits = array() }
 end
 
+local function activity_screen(buf)
+  local text = table.concat(api.nvim_buf_get_lines(buf, math.max(0, api.nvim_buf_line_count(buf) - 80), -1, false), '\n')
+  if #text <= 65536 then return text end
+  local start = #text - 65536 + 1
+  -- The JSON boundary requires valid UTF-8 even when the byte cap cuts a glyph.
+  while text:byte(start) and text:byte(start) >= 128 and text:byte(start) < 192 do start = start + 1 end
+  return text:sub(start)
+end
+
+-- Metadata only: safe in nvim__exec_lua_fast, including modal prompts.
+-- Reject observations from an older snapshot or an already superseded reader.
+function M.update_activity(votes, generation)
+  if generation ~= vim.g.neordr_generation then fail('stale_instance', 'Editor generation changed') end
+  local result = {}
+  local panes = {}
+  for _, pane in ipairs(M.last_snapshot and M.last_snapshot.panes or {}) do panes[pane.pane_id] = pane end
+  local function tick()
+    local seconds, micros = vim.uv.gettimeofday()
+    M.activity_clock = math.max(M.activity_clock + 1, seconds * 1000000 + micros)
+    return M.activity_clock
+  end
+  for _, vote in ipairs(votes) do
+    local pane = panes[vote.pane_id]
+    local previous = M.agent_activity[vote.pane_id] or { status = 'unknown', seq = 0, observation = 0 }
+    if pane and pane.revision == vote.revision and pane.terminal_title == vote.title
+        and previous.observation == vote.observation then
+      local state = vim.deepcopy(previous)
+      local reset = state.identity ~= vote.identity
+      if reset then state = { status = 'unknown', seq = 0, identity = vote.identity } end
+      local detected = vote.status ~= '' and vote.status or state.status
+      -- A completion is only a witnessed working/blocked -> idle transition,
+      -- never initial discovery of an already idle process or opening history.
+      if detected == 'idle' and (state.status == 'working' or state.status == 'blocked') then
+        detected = pane.focused and 'idle' or 'done'
+        state.completion = tick()
+      elseif detected == 'idle' and state.status == 'done' and not pane.focused then
+        detected = 'done'
+      elseif state.status == 'done' and pane.focused and vote.status == '' then
+        detected = 'idle'
+      end
+      if detected ~= state.status or reset then state.seq = tick() end
+      state.status, state.observation = detected, tick()
+      M.agent_activity[vote.pane_id] = state
+      previous = state
+    end
+    result[vote.pane_id] = previous
+  end
+  return result
+end
+
 function M.snapshot()
   -- Do not call jobwait or rebuild plugin state reentrantly from a modal input
   -- loop. Keep the last normal snapshot visible until the user exits the prompt.
@@ -100,9 +153,11 @@ function M.snapshot()
           cwd = vim.b[buf].osc7_dir or vim.fn.getcwd(-1, api.nvim_tabpage_get_number(tab)),
           title = title, terminal_title = title,
           label = vim.b[buf].neordr_label or (M.label_terminal and M.label_terminal(buf) or title),
-          agent_status = 'unknown', revision = api.nvim_buf_get_changedtick(buf),
+          agent_status = (M.agent_activity[pane] or {}).status or 'unknown', revision = api.nvim_buf_get_changedtick(buf),
           neordr = { buf = buf, channel = channel, shell_pid = vim.fn.jobpid(channel),
-            tty = api.nvim_get_chan_info(channel).pty, tabpage = tab },
+            tty = api.nvim_get_chan_info(channel).pty, tabpage = tab,
+            activity = M.agent_activity[pane],
+            screen = activity_screen(buf) },
         }
         table.insert(by_tab[tab], row)
       end
@@ -137,6 +192,9 @@ function M.snapshot()
   workspaces[1] = { workspace_id = ws, number = 1,
     label = M.label or vim.fn.fnamemodify(M.cwd, ':t'), focused = true,
     pane_count = #rows, tab_count = #rows, active_tab_id = active.tab_id, agent_status = 'unknown' }
+  local present = {}
+  for _, pane in ipairs(panes) do present[pane.pane_id] = true end
+  for id in pairs(M.agent_activity) do if not present[id] then M.agent_activity[id] = nil end end
   local layouts = array()
   for _, pane in ipairs(panes) do layouts[#layouts + 1] = pane_layout(pane) end
   M.last_snapshot = { panes = panes, tabs = tabs, workspaces = workspaces, layouts = layouts }

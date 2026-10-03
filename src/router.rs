@@ -191,13 +191,14 @@ pub fn execute(config: &Path, request: &api::Request) -> Result<api::Reply> {
         } else {
             crate::process::snapshot()?
         };
-        for ((item, _), reply) in sessions.iter().zip(replies) {
+        for ((item, instance), reply) in sessions.iter().zip(replies) {
             let mut source = match reply {
                 Ok(reply) => reply,
                 Err(_) if session::inspect_bridge(&item.socket_path).is_err() => continue,
                 Err(error) => return Err(error),
             };
             crate::backend::enrich_agents(&mut source, &rows);
+            crate::activity::enrich(instance, &mut source, &rows)?;
             let mut source = crate::backend::project_session(source);
             let focused = selected.as_deref() == Some(&item.name);
             for ws in &mut source.workspaces {
