@@ -146,10 +146,25 @@ fn default_workspace(config: &std::path::Path) -> Result<String> {
     if let Some(name) = selection::current(config)? {
         return Ok(name);
     }
-    session::bridges(config)?
-        .first()
-        .map(|s| s.name.clone())
-        .context("no running Neovim workspaces; create a workspace before attaching")
+    if let Some(first) = session::bridges(config)?.first() {
+        return Ok(first.name.clone());
+    }
+    // Nothing is running: start a workspace in the home directory.
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute() && p.is_dir())
+        .context("no running Neovim workspaces and $HOME is not usable for a new one")?;
+    let params = neordr::contracts::api::WorkspaceCreateParams {
+        source_workspace_id: None,
+        cwd: Some(home.to_string_lossy().into()),
+        focus: true,
+        label: None,
+        env: Default::default(),
+    };
+    neordr::editors::create(config, &params, None).context("create default workspace in ~")?;
+    selection::current(config)?
+        .or_else(|| session::bridges(config).ok()?.first().map(|s| s.name.clone()))
+        .context("created a default workspace but could not find it")
 }
 
 fn run() -> Result<i32> {
