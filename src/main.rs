@@ -163,7 +163,12 @@ fn default_workspace(config: &std::path::Path) -> Result<String> {
     };
     neordr::editors::create(config, &params, None).context("create default workspace in ~")?;
     selection::current(config)?
-        .or_else(|| session::bridges(config).ok()?.first().map(|s| s.name.clone()))
+        .or_else(|| {
+            session::bridges(config)
+                .ok()?
+                .first()
+                .map(|s| s.name.clone())
+        })
         .context("created a default workspace but could not find it")
 }
 
