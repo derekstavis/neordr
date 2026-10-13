@@ -247,7 +247,7 @@ end})
             eventually(captured.exists)
             terminal_env = json.loads(captured.read_text())
             assert state['kind'] == 'terminal' and state['channel'] > 0, state
-            assert terminal_env['HERDR_SESSION'] == session, terminal_env
+            assert terminal_env['HERDR_SESSION'] == 'default', terminal_env
             assert terminal_env['HERDR_ENV'] == '1', terminal_env
             assert terminal_env['HERDR_PANE_ID'] == state['pane'], state
             panes = rpc(endpoint, 'pane.list')['panes']

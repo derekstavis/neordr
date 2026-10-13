@@ -57,8 +57,11 @@ end
 -- Call after creating the buffer, before jobstart(..., {term=true}).
 function M.prepare(buf, env)
   assert(M.session, 'Neordr is not configured')
+  -- Panes report the default session: Moshi only matches hook records whose
+  -- session equals the one in its request (plain `mux=herdr` means default).
+  -- Pane IDs already identify the owning editor.
   local result = vim.tbl_extend('force', {}, env or {}, {
-    HERDR_ENV = '1', HERDR_SESSION = M.session, HERDR_PANE_ID = M.register(buf),
+    HERDR_ENV = '1', HERDR_SESSION = 'default', HERDR_PANE_ID = M.register(buf),
     HERDR_SOCKET_PATH = '', NEORDR_WORKSPACE_ID = '',
     TMUX = '', TMUX_PANE = '', ZELLIJ = '', ZELLIJ_SESSION_NAME = '', ZELLIJ_PANE_ID = '',
   })

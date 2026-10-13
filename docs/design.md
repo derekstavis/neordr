@@ -174,11 +174,17 @@ invocation is sufficient for its process-name tests remains an end-to-end check.
 Use the existing Moshi Claude/Codex hooks and native transcript readers. Do not
 reimplement transcript parsing or use terminal scrollback as conversation data.
 
-A small Neovim Lua integration should supply HERDR_ENV=1, HERDR_SESSION and
-HERDR_PANE_ID in the environment of each new terminal job. Preserve NVIM.
+A small Neovim Lua integration should supply HERDR_ENV=1, HERDR_SESSION=default
+and HERDR_PANE_ID in the environment of each new terminal job. Preserve NVIM.
 Handle inherited competing mux variables locally to managed jobs. Existing
 shells cannot acquire new environment values retroactively without a wrapper or
 explicit process-based registration.
+
+HERDR_SESSION is `default`, not the per-editor name: Moshi's gateway matches a
+hook record to a pane only when the record's session equals the session in the
+request, and the app requests plain `mux=herdr` (default). Pane IDs already
+carry the owning editor, so routing is unaffected. Agents started before this
+change keep the old value until restarted.
 
 Expose real shell/job PIDs and agent identity through pane.process_info and
 agent.list. Pane discovery must work without hook state, avoiding a circular
