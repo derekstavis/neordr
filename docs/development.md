@@ -20,6 +20,7 @@ initializing the submodule, builds can run offline.
 | `src/main.rs` | CLI and compatibility entry points. |
 | `src/api.rs`, `src/protocol.rs` | Typed application requests and JSON transport boundaries. |
 | `src/server.rs`, `src/router.rs` | Per-editor service and default cross-editor routing. |
+| `src/agent_sessions.rs` | Read-only Moshi hook associations validated against live foreground agent identity. |
 | `src/activity.rs` | Upstream screen/title detection and editor-owned activity observations. |
 | `src/backend.rs`, `src/process.rs` | Typed Neovim backend operations and foreground process discovery. |
 | `src/control.rs`, `src/doctor.rs` | Typed control-mode CLI streaming and read-only integration diagnostics. |
@@ -180,6 +181,11 @@ NEORDR_BROWSER_READY_FILE=/tmp/neordr-browser.json python3 tests/moshi_smoke.py
 The ready file contains the fixture URL and location. The fixture remains alive
 for up to five minutes; delete the ready file to end it early. Its local proxy
 routes gateway requests to the disposable daemon.
+
+`python3 tests/moshi_legacy_sessions_smoke.py` verifies Chat View discovery,
+transcript backlog/append, and input when running agents retain old per-editor
+`HERDR_SESSION` values. It also checks that later hook events do not regress
+those associations.
 
 ### Herdr interactive client
 

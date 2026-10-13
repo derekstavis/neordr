@@ -258,3 +258,23 @@ scope, and validation commands.
 
 Local binary inspection artifacts were created under
 `/private/tmp/moshi-inspection/`; these are local evidence, not upstream source.
+
+## Live conversation associations
+
+Older running terminals retain their per-editor `HERDR_SESSION` even after the
+plugin starts exporting `default`. Moshi 0.4.27 rejects those saved hook records
+when its client queries the default session. Rewriting the records is temporary:
+the next completion hook restores the original environment's session name.
+
+Neordr projects an optional typed Herdr `agent_session` from existing Moshi
+Claude/Codex hook metadata when the full pane identity, live foreground agent
+PID and agent type all match. Ended, missing-PID, malformed and ambiguous records
+are ignored. This reads association metadata, not transcripts, and does not edit
+agent settings or hook records. No Moshi installation means no enrichment.
+
+The per-process index refreshes at most once per second and is shared across
+editor snapshots; foreground processes are still validated on each request.
+Record files are limited to 64 KiB and directory scans to 10,000 entries per
+agent. The small hook-record adapter is a Moshi file-format dependency; unknown
+or changed metadata fails closed, leaving Moshi's own discovery available.
+The outbound `AgentSessionInfo` schema comes from the pinned Herdr source.

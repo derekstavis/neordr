@@ -170,8 +170,11 @@ pub fn empty_session_snapshot() -> SessionSnapshot {
 /// Enrich a fresh editor read with a process table owned by this request.
 /// The router shares this table across editors; it never caches mutation targets.
 pub fn enrich_agents(snapshot: &mut Snapshot, rows: &[process::Process]) {
+    let sessions = crate::agent_sessions::current();
     for pane in &mut snapshot.panes {
-        pane.info.agent = process::foreground(pane, rows)
+        let foreground = process::foreground(pane, rows);
+        pane.info.agent_session = sessions.resolve(&pane.info.pane_id, &foreground);
+        pane.info.agent = foreground
             .iter()
             .find_map(process::agent)
             .map(str::to_owned);

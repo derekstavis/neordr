@@ -193,7 +193,7 @@ fn dechunk(mut body: &[u8]) -> Result<Vec<u8>> {
         body = &body[size + 2..];
     }
 }
-fn state_dir() -> Option<PathBuf> {
+pub(crate) fn state_dir() -> Option<PathBuf> {
     if let Some(p) =
         std::env::var_os("MOSHI_CONFIG_DIR").or_else(|| std::env::var_os("MOSHI_STATE_DIR"))
     {

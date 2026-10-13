@@ -5,6 +5,7 @@
 compile_error!("Neordr currently supports macOS and Linux Unix sockets only");
 
 mod activity;
+mod agent_sessions;
 pub mod api;
 pub mod attach;
 pub mod backend;
