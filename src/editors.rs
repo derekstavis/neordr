@@ -61,6 +61,33 @@ pub fn record(config: &Path, key: &str, instance: &nvim::Instance) -> Result<()>
     result
 }
 
+/// Builds the headless Neovim command, started through the user's login shell
+/// so `PATH` and other environment from fish, zsh, bash, etc. are respected
+/// even when neordr itself was launched outside a shell session.
+fn editor_command(socket: &Path) -> Command {
+    let shell = std::env::var_os("SHELL")
+        .map(PathBuf::from)
+        .filter(|shell| shell.is_absolute() && shell.is_file());
+    let Some(shell) = shell else {
+        let mut command = Command::new("nvim");
+        command.args(["--headless", "--listen"]).arg(socket);
+        return command;
+    };
+    // The socket travels through the environment because the quoting rules of
+    // the command string differ between shells, while "$VAR" works in all of
+    // the common ones (POSIX shells and fish).
+    let mut command = Command::new(shell);
+    command
+        .args([
+            "-l",
+            "-i",
+            "-c",
+            r#"exec nvim --headless --listen "$NEORDR_NVIM_SOCKET""#,
+        ])
+        .env("NEORDR_NVIM_SOCKET", socket);
+    command
+}
+
 fn detached(command: &mut Command) -> Result<Child> {
     command
         .stdin(Stdio::null())
@@ -224,10 +251,8 @@ pub fn create(
     let runtime = PathBuf::from(format!("/tmp/neordr-{}-{nonce:x}", std::process::id()));
     fs::DirBuilder::new().mode(0o700).create(&runtime)?;
     let socket = runtime.join("nvim.sock");
-    let mut command = Command::new("nvim");
+    let mut command = editor_command(&socket);
     command
-        .args(["--headless", "--listen"])
-        .arg(&socket)
         .current_dir(&cwd)
         .envs(&params.env)
         .env("XDG_CONFIG_HOME", config)
