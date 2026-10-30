@@ -129,7 +129,9 @@ def main():
                     f'p=subprocess.Popen({[str(BIN),"--session","ui"]!r},start_new_session=True)\n'
                     f'Path({str(marker)!r}).write_text(str(p.pid))\n'
                     'p.wait()\n')
-                owner,master,reader=outer([sys.executable,str(launcher)],env)
+                # A blocked read on the same master can make close hang on macOS.
+                # This case intentionally closes the PTY, so no reader is needed.
+                owner,master,reader=outer([sys.executable,str(launcher)],env,drain=case!='outer-hangup')
                 attach_pid=None
                 try:
                     eventually(marker.exists);attach_pid=int(marker.read_text())

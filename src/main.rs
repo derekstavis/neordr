@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use neordr::{attach, nvim, protocol, router, selection, server, session};
+use neordr::{attach, nvim, protocol, router, selection, server, service, session};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -52,6 +52,11 @@ enum Commands {
         #[arg(long)]
         background: bool,
     },
+    /// Run the router as a user service (launchd or systemd).
+    Service {
+        #[command(subcommand)]
+        command: ServiceCommands,
+    },
     /// Find live Neovim RPC sockets (including instances without a bridge).
     Discover {
         #[arg(long)]
@@ -95,6 +100,18 @@ enum TerminalSessions {
         #[arg(long, default_value_t = 24)]
         rows: u16,
     },
+}
+
+#[derive(Subcommand)]
+enum ServiceCommands {
+    /// Install and start the service. A router that is already running keeps serving.
+    Install,
+    /// Stop the service and remove its definition. Workspaces keep running.
+    Uninstall,
+    /// Restart the service's router; its workspaces keep running.
+    Restart,
+    /// Show whether the service is installed and which router answers.
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -236,6 +253,12 @@ fn run() -> Result<i32> {
                 router::serve(&config)?;
             }
         }
+        Some(Commands::Service { command }) => match command {
+            ServiceCommands::Install => service::install(&config)?,
+            ServiceCommands::Uninstall => service::uninstall()?,
+            ServiceCommands::Restart => service::restart(&config)?,
+            ServiceCommands::Status => service::status(&config)?,
+        },
         Some(Commands::Discover { .. }) => unreachable!(),
         Some(Commands::Serve { nvim }) => {
             let name = cli.session.context("serve requires --session <name>")?;

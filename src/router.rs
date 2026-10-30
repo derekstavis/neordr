@@ -301,6 +301,11 @@ pub fn start_background(config: &Path) -> Result<()> {
         std::os::unix::net::UnixStream::connect(config.join("herdr/herdr.sock")).is_err(),
         "default Herdr socket is accepting connections but is not a healthy Neordr router"
     );
+    // An installed service starts the router from the user's own manager, so
+    // it does not inherit this process's ssh or service session.
+    if crate::service::installed_for(config) && crate::service::start_and_wait(config).is_ok() {
+        return Ok(());
+    }
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("router")

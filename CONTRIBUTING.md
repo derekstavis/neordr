@@ -1,13 +1,12 @@
 # Contributing to Neordr
 
-Neordr is currently a private preview. Collaborators with repository access can
-open issues and pull requests. Keep changes small enough to review and describe
+Open issues and pull requests to contribute. Keep changes small enough to review and describe
 both the user-visible behavior and the evidence that it works.
 
 ## First checkout
 
 ```sh
-git clone git@github.com:derekstavis/neordr.git
+git clone https://github.com/derekstavis/neordr.git
 cd neordr
 git submodule update --init vendor/herdr
 cargo build --locked --bin neordr --example herdr_contract_fixture

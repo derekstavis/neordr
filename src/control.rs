@@ -285,6 +285,20 @@ pub fn run(
         if stop.load(Ordering::Relaxed) || unsafe { libc::getppid() } != parent {
             break;
         }
+        // Darwin may not report a closed pipe reader unless POLLOUT is requested.
+        // Probe separately when idle so a writable stdout cannot spin the loop.
+        if output.is_empty() {
+            let mut probe = libc::pollfd {
+                fd: 1,
+                events: libc::POLLOUT,
+                revents: 0,
+            };
+            if unsafe { libc::poll(&mut probe, 1, 0) } > 0
+                && probe.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0
+            {
+                break;
+            }
+        }
         let mut fds = [
             libc::pollfd {
                 fd: 0,
@@ -297,8 +311,8 @@ pub fn run(
                 revents: 0,
             },
             libc::pollfd {
-                fd: 1,
-                events: if output.is_empty() { 0 } else { libc::POLLOUT },
+                fd: if output.is_empty() { -1 } else { 1 },
+                events: libc::POLLOUT,
                 revents: 0,
             },
         ];
@@ -432,8 +446,16 @@ pub fn run(
         if fds[1].revents & libc::POLLOUT != 0 {
             flush(ui.master.as_raw_fd(), &mut input)?;
         }
-        if fds[2].revents & libc::POLLOUT != 0 {
-            flush(1, &mut output)?;
+        if fds[2].revents & libc::POLLOUT != 0
+            && let Err(error) = flush(1, &mut output)
+        {
+            if error
+                .downcast_ref::<io::Error>()
+                .is_some_and(|e| e.kind() == io::ErrorKind::BrokenPipe)
+            {
+                break;
+            }
+            return Err(error);
         }
         if ui.child.try_wait()?.is_some()
             || fds[1].revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0
