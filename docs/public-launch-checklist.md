@@ -32,8 +32,9 @@ evidence or decision in the linked issue, release notes, or this document.
   phone/cloud paths remain unverified.
 - [ ] If the router service ships, exercise install, status, restart, uninstall,
   and workspace survival on both macOS and Linux with real user service managers.
-  The isolated launchd smoke test passed on October 30. A dedicated-account
-  systemd test has been added to Linux CI but has not yet run on GitHub.
+  The isolated launchd smoke test passed locally and on GitHub's macOS runner
+  on October 30. The dedicated-account systemd test also passed on GitHub's
+  Linux runner. Confirm these results for the final release commit.
 - [ ] Verify a clean install and upgrade from the released archives, including
   matching plugin and binary versions, help, health checks, and uninstall.
   A provisional macOS ARM v0.2.0 archive was assembled locally on October 30;
