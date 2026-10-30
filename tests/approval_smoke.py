@@ -20,24 +20,27 @@ from moshi_smoke import BIN, HOOK, eventually, http, lua, rpc
 FIXTURE = r'''
 import json, os, select, subprocess, sys, tty
 from pathlib import Path
-root=Path(sys.argv[1]); source=Path(__file__).name
+root=Path(sys.argv[1]); source=sys.argv[4] if len(sys.argv)>4 else Path(__file__).name
+name=sys.argv[5] if len(sys.argv)>5 else source
 rollout=open(sys.argv[2])
 tty.setraw(0)
-capture=open(root/(source+'.input'),'ab',buffering=0)
+capture=open(root/(name+'.input'),'ab',buffering=0)
 last=None
 while True:
-    control=root/(source+'.control')
+    control=root/(name+'.control')
     if control.exists():
         data=json.loads(control.read_text())
         if data['id']!=last:
             last=data['id']
+            if 'title' in data:
+                os.write(1, ('\x1b]0;'+data['title']+'\x07').encode())
             os.write(1, ('\x1b[2J\x1b[H'+data['screen'].replace('\n','\r\n')).encode())
             event=data.get('event')
             if event:
                 reply=subprocess.run([sys.argv[3],source+'-hook'],input=json.dumps(event),text=True,capture_output=True,timeout=10)
-                (root/(source+'.hook')).write_text(reply.stdout+reply.stderr)
+                (root/(name+'.hook')).write_text(reply.stdout+reply.stderr)
                 if reply.returncode: raise RuntimeError('hook failed: '+str(reply.returncode))
-            (root/(source+'.ack')).write_text(last)
+            (root/(name+'.ack')).write_text(last)
     if select.select([0],[],[],.02)[0]:
         data=os.read(0,4096)
         if not data: break
@@ -57,6 +60,7 @@ class Rig:
                     'CLAUDE_CONFIG_DIR': str(root / '.claude'), 'CODEX_HOME': str(root / 'codex'),
                     'MOSHI_HERDR_PATH': str(root / 'bin/herdr'), 'TMPDIR': str(root),
                     'NVIM_LOG_FILE': str(root / 'nvim.log'), 'NEORDR_TRACE': '1',
+                    'XDG_STATE_HOME': str(root / 'nvim-state'),
                     'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH']}
         for key in ['TMUX', 'TMUX_PANE', 'ZELLIJ', 'HERDR_ENV', 'HERDR_SESSION', 'HERDR_PANE_ID',
                     'HERDR_CONFIG_PATH', 'HERDR_SOCKET_PATH', 'NVIM']:
@@ -85,7 +89,8 @@ class Rig:
         self.start([HOOK, 'serve', '--gateway-listen', f'127.0.0.1:{self.port}'], 'moshi')
         eventually(lambda: http(self.port, '/v1/version')[0] == 200)
 
-    def agent(self, source):
+    def agent(self, source, name=None):
+        name = name or source
         session = str(uuid.uuid4())
         if source == 'claude':
             path = self.root / '.claude/projects/neordr-test' / (session + '.jsonl')
@@ -98,25 +103,29 @@ class Rig:
                      'payload': {'id': session, 'cwd': str(self.root), 'source': 'cli', 'originator': 'codex_cli_rs'}}]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
-        child = self.root / 'bin' / source
+        child = self.root / 'bin' / source if name == source else self.root / 'bin' / name / source
+        child.parent.mkdir(parents=True, exist_ok=True)
         child.write_text(FIXTURE)
         code = "vim.cmd.enew(); local b=vim.api.nvim_get_current_buf(); local e=require('neordr.backend').prepare(b); "
-        argv = '{' + ','.join(json.dumps(arg) for arg in ['python3', str(child), str(self.root), str(path), HOOK]) + '}'
+        argv = '{' + ','.join(json.dumps(arg) for arg in ['python3', str(child), str(self.root), str(path), HOOK, source, name]) + '}'
         code += 'vim.fn.jobstart(' + argv + ',{term=true,env=e}); return e.HERDR_PANE_ID'
         pane = lua(self.env, self.address, code)
-        self.agents[source] = {'session': session, 'pane': pane, 'path': path}
-        self.show(source, 'READY', {'hook_event_name': 'SessionStart'})
+        self.agents[name] = {'session': session, 'pane': pane, 'path': path, 'source': source}
+        self.show(name, 'READY', {'hook_event_name': 'SessionStart'})
         # Moshi ignores ordinary tool hooks for three seconds after SessionStart.
         time.sleep(3.1)
-        return self.agents[source]
+        return self.agents[name]
 
-    def show(self, source, screen, event=None):
+    def show(self, source, screen, event=None, title=None):
         agent = self.agents[source]
         token = str(uuid.uuid4())
         if event:
             event = {**event, 'session_id': agent['session'], 'cwd': str(self.root), 'transcript_path': str(agent['path'])}
         temporary = self.root / 'control.tmp'
-        temporary.write_text(json.dumps({'id': token, 'screen': screen, 'event': event}))
+        control = {'id': token, 'screen': screen, 'event': event}
+        if title is not None:
+            control['title'] = title
+        temporary.write_text(json.dumps(control))
         temporary.replace(self.root / (source + '.control'))
         ack = self.root / (source + '.ack')
         eventually(lambda: ack.exists() and ack.read_text() == token)
@@ -142,7 +151,8 @@ class Rig:
 
     def answer(self, source, path, body, expected, status=200, named=False):
         before = {name: self.input(name) for name in self.agents}
-        body = {'source': source, 'sessionId': self.agents[source]['session'], **body}
+        body = {'source': self.agents[source].get('source', source),
+                'sessionId': self.agents[source]['session'], **body}
         scope = '?mux=herdr:approval' if named else '?mux=herdr'
         actual, response = http(self.port, path + scope, body)
         assert actual == status, (source, path, actual, response)

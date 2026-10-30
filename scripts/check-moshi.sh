@@ -10,6 +10,6 @@ unset NVIM HERDR_SESSION HERDR_ENV HERDR_PANE_ID
 "${MOSHI_HOOK_BIN:-moshi-hook}" version
 cargo build --locked --bin neordr
 export NEORDR_BIN="$PWD/target/debug/neordr"
-for test in moshi approval moshi_interactions moshi_create moshi_legacy_sessions; do
+for test in moshi approval moshi_approval_lifecycle moshi_interactions moshi_create moshi_legacy_sessions; do
     python3 "tests/${test}_smoke.py"
 done

@@ -86,7 +86,8 @@ def main():
                     eventually(lambda: rpc(endpoint, 'pane.get', {'pane_id': pid})['pane'].get('agent') == source)
                     eventually(lambda: 'READY_' + source in rpc(endpoint, 'pane.read', {'pane_id': pid})['read']['text'])
                     launches = [json.loads(l) for l in (root / 'launches.jsonl').read_text().splitlines()]
-                    assert any(l == {'agent': source, 'pane': pid, 'session': key, 'cwd': str(cwd)} for l in launches), launches
+                    # New agents use the global router identity, even in a named editor bridge.
+                    assert any(l == {'agent': source, 'pane': pid, 'session': 'default', 'cwd': str(cwd)} for l in launches), launches
                     rpc(router, 'pane.send_text', {'pane_id': pid, 'text': 'agent-input'})
                     eventually(lambda: '6167656e742d696e707574' in rpc(endpoint, 'pane.read', {'pane_id': pid})['read']['text'])
                     # Return to the same shell. The launch exception must not allow stale chat input.

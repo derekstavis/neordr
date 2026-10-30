@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   check:
-    name: Check (Linux)
-    runs-on: ubuntu-24.04
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     env:
       CARGO_TERM_COLOR: always
@@ -32,3 +36,32 @@ jobs:
         run: python3 scripts/install-ci-neovim.py
       - name: Formatting, lint, contract and integration tests
         run: bash scripts/check.sh
+      - name: Test systemd user service
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo useradd --create-home --shell /bin/bash neordr-ci
+          sudo loginctl enable-linger neordr-ci
+          trap 'sudo loginctl disable-linger neordr-ci' EXIT
+          uid=$(id -u neordr-ci)
+          test_dir=$(mktemp -d /tmp/neordr-systemd-ci-XXXXXX)
+          chmod 755 "$test_dir"
+          cp -R "$(dirname "$(dirname "$(command -v nvim)")")" "$test_dir/nvim"
+          chmod -R a+rX "$test_dir/nvim"
+          install -m 755 target/debug/neordr "$test_dir/neordr"
+          cp tests/systemd_service_smoke.py tests/moshi_smoke.py "$test_dir/"
+          for attempt in {1..30}; do
+            if sudo -u neordr-ci env XDG_RUNTIME_DIR="/run/user/$uid" \
+              DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+              systemctl --user show-environment >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          sudo -u neordr-ci env HOME=/home/neordr-ci USER=neordr-ci \
+            XDG_CONFIG_HOME=/home/neordr-ci/.config XDG_RUNTIME_DIR="/run/user/$uid" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+            PATH="$test_dir/nvim/bin:/usr/local/bin:/usr/bin:/bin" \
+            NEORDR_BIN="$test_dir/neordr" NEORDR_SYSTEMD_TEST=1 \
+            python3 "$test_dir/systemd_service_smoke.py"

@@ -3,8 +3,7 @@
 Neordr groups Neovim editor workspaces in one Herdr-compatible default session. Neovim owns the
 editor layout and terminal jobs; remote clients attach to the full editor.
 
-This help describes the development plugin. Help and health checks were added
-after v0.1.0. Plugin and executable releases share version tags.
+Plugin and executable releases share version tags.
 
 CONTENTS                                                       *neordr*
 
@@ -23,31 +22,27 @@ Requirements: Linux or macOS, Neovim 0.12+, and a separately installed `neordr`
 executable. Verified Neovim version: 0.12.5. Older Neovim versions lack required
 remote-UI and fast Lua APIs. The plugin does not download executables.
 
-The repository is private during the preview. SSH access to the repository is
-required for the examples below. Install a matching binary from its GitHub
+Install a matching binary from its GitHub
 release or build it separately. Installing only the plugin does not need Cargo
 or initialized Git submodules.
 
 vim.pack (in init.lua) >lua
     vim.pack.add({
-      { src = 'git@github.com:derekstavis/neordr.git', version = 'main' },
+      { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.2.0' },
     })
     require('neordr').setup()
 <
 lazy.nvim (add to your existing plugin specifications) >lua
     {
-      url = 'git@github.com:derekstavis/neordr.git',
-      branch = 'main',
+      url = 'https://github.com/derekstavis/neordr.git',
+      tag = 'v0.2.0',
       submodules = false,
       lazy = false,
       main = 'neordr',
       opts = {},
     }
 <
-The examples use main for the new diagnostics. Pin both plugin and executable
-to the same release for a released installation. With vim.pack use a tag as
-`version`; with lazy.nvim replace `branch` with `tag`. The v0.1.0 plugin has the
-original runtime API but does not include this help or health checks.
+Pin both plugin and executable to the same release.
 
 Initialize during startup, before terminal jobs are launched. If a terminal
 plugin starts jobs during its setup, make Neordr a dependency of that plugin.

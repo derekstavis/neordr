@@ -263,6 +263,15 @@ pub fn inspect(config: &Path, port: u16, selected: Option<&str>) -> Result<Repor
         Ok(_) => report.check("router", "warn", "Default socket is not a Neordr router"),
         Err(e) => report.check("router", "warn", e.to_string()),
     }
+    if crate::service::installed_for(config) {
+        report.check("service", "ok", "Router service installed");
+    } else {
+        report.check(
+            "service",
+            "warn",
+            "Not installed; a router started from ssh or another service inherits that session. Run `neordr service install`",
+        );
+    }
     match get(port, "/v1/version").and_then(|b| Ok(serde_json::from_slice::<Version>(&b)?)) {
         Ok(v) => report.check(
             "Moshi gateway",
