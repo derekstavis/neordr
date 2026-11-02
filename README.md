@@ -24,6 +24,10 @@ chatting with an agent without maintaining a second workspace layout.
 
 Interfaces are still evolving; see the compatibility limits below.
 
+**Release status:** v0.1.0 is the latest published release. This branch describes
+the upcoming v0.2.0; its health checks, help, router service, and other newer
+features require a source build until v0.2.0 is published.
+
 ## What it does
 
 - **Reconnect to your editor.** Discover active Neovim sessions and attach a
@@ -50,7 +54,7 @@ Install the Lua plugin through your plugin manager. For Neovim's `vim.pack`:
 
 ```lua
 vim.pack.add({
-  { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.2.0' },
+  { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.1.0' },
 })
 require('neordr').setup()
 ```
@@ -60,8 +64,9 @@ See [plugin installation](docs/installation.md#install-the-neovim-plugin) for
 `lazy.nvim`, release pins, and archive-only installation. No Rust build is needed
 when installing the plugin alongside a downloaded binary.
 
-Run `:checkhealth neordr` to diagnose setup and `:help neordr` for configuration
-and terminal adapters. Setup reports failures without stopping your other
+With a source build of the upcoming v0.2.0, run `:checkhealth neordr` to diagnose
+setup and `:help neordr` for configuration and terminal adapters. These commands
+are not available in the v0.1.0 plugin. Setup reports failures without stopping your other
 Neovim configuration; it does not download executables.
 
 Restart Neovim, run `:NeordrTerm`, and start `claude`, `codex`, or your usual
