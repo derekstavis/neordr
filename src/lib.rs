@@ -21,6 +21,7 @@ pub mod protocol;
 pub mod router;
 pub mod selection;
 pub mod server;
+pub mod service;
 pub mod session;
 
 pub mod control;

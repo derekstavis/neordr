@@ -9,9 +9,8 @@ Install the binary and choose one plugin installation method below. Moshi and He
 - Neovim **0.12+** on `PATH`. Testing uses **0.12.5**. Neordr depends on
   `--remote-ui`, `:detach`, and the experimental `nvim__exec_lua_fast` API;
   older Neovim releases are not supported.
-- Access to the private `derekstavis/neordr` repository during the preview.
-- For release downloads: GitHub CLI (`gh`) authenticated to an account with
-  repository access. For source builds: Git and Rust via rustup.
+- For the download commands below: authenticated GitHub CLI (`gh`). For source builds: Git
+  and Rust via rustup. Release archives can also be downloaded in a browser.
 
 ## Install a release
 
@@ -34,11 +33,10 @@ The example below selects Apple Silicon. Set `version` and `target` for your
 release and machine, then run in a temporary directory:
 
 ```sh
-version=v0.1.0
+version=v0.2.0
 target=aarch64-apple-darwin
 archive="neordr-${version}-${target}.tar.gz"
 
-gh auth status
 gh release download "$version" --repo derekstavis/neordr \
   --pattern "$archive" --pattern SHA256SUMS
 ```
@@ -90,16 +88,9 @@ It needs neither Cargo nor initialized Git submodules. The executable is
 installed separately by the previous step; there is no build hook or automatic
 binary download.
 
-The examples below select `main` to include the new diagnostics and help files.
-These additions are compatible with the `v0.1.0` binary, but are not part of
-the `v0.1.0` plugin tag. For a released installation, use the
-same tag for the plugin and binary: `version = 'v0.1.0'` with `vim.pack`, or
-`tag = 'v0.1.0'` instead of `branch` with `lazy.nvim`. Development versions may
-change, so update the binary when the plugin's compatibility check requests it.
-
-During the private preview, SSH must authenticate as a GitHub account with
-repository access. GitHub CLI authentication for release downloads does not
-necessarily configure your Git SSH credentials.
+The examples below pin the plugin to v0.2.0. Use the same tag for the plugin
+and binary. Development versions may change, so update the binary when the
+plugin's compatibility check requests it.
 
 ### vim.pack
 
@@ -107,7 +98,7 @@ Add this to `init.lua` before configuring plugins that start terminal jobs:
 
 ```lua
 vim.pack.add({
-  { src = 'git@github.com:derekstavis/neordr.git', version = 'main' },
+  { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.2.0' },
 })
 require('neordr').setup()
 ```
@@ -121,8 +112,8 @@ Add this plugin specification to your existing `lazy.nvim` configuration:
 
 ```lua
 {
-  url = 'git@github.com:derekstavis/neordr.git',
-  branch = 'main',
+  url = 'https://github.com/derekstavis/neordr.git',
+  tag = 'v0.2.0',
   submodules = false,
   lazy = false,
   main = 'neordr',
@@ -166,9 +157,8 @@ The setup starts a bridge for this editor and ensures the shared router is
 running. Internal bridge names are generated from the initial directory and editor
 identity. Editors appear as workspaces in the default session.
 
-Restart Neovim and run `:checkhealth neordr`. The health command and
-`:help neordr` require the development plugin until the next release. Health
-checks inspect readiness without restarting your editor or terminal jobs.
+Restart Neovim and run `:checkhealth neordr`. Health checks inspect readiness
+without restarting your editor or terminal jobs. See `:help neordr` for options.
 
 Run `:NeordrTerm` to open a managed shell in a split, then `:NeordrStatus`
 to see its session name. In another terminal:
@@ -182,6 +172,38 @@ neordr session attach default
 `default` is the session returned by `session list`. Attachments share your
 editor's state. Detach with Ctrl-B, q or `:detach`; quitting Neovim stops its
 terminal jobs.
+
+## Run the router as a service
+
+The shared router starts on demand, but a router started from an ssh login or
+another service passes that launch context to every workspace it creates. On
+macOS this is the Background session: no display, no GUI services, so tools such
+as `screencapture` fail and keychain access can be unavailable. Installing the
+router as a user service gives it, and its workspaces, the clean session of your
+own login instead.
+
+```sh
+neordr service install     # launchd agent (macOS) or systemd user unit (Linux)
+neordr service status
+neordr service restart     # replaces the router; workspaces keep running
+neordr service uninstall   # workspaces keep running
+```
+
+Installing is safe while Neovim workspaces and a router are running. It does not
+stop the running router: the service's router waits behind it and takes over the
+next time a router is needed after that process exits. `neordr doctor` reports
+whether the service is installed.
+
+- macOS writes `~/Library/LaunchAgents/dev.neordr.router.plist` and loads it into
+  your GUI session, even when you run the command over ssh. With nobody logged in
+  at the console it falls back to the per-user background domain and warns.
+- Linux writes `~/.config/systemd/user/neordr.service`. Run
+  `loginctl enable-linger $USER` to keep it running after you log out.
+- The service captures your current `PATH` plus the usual tool locations. Re-run
+  `install` after moving the binary; it records the binary's absolute path.
+- Granting Screen Recording to workspace tools is a separate macOS permission and
+  applies to the `neordr` binary. It may need to be granted again after an update
+  unless the binary has a stable signing identity.
 
 ## Connect Moshi
 
@@ -239,7 +261,7 @@ and input behavior. Herdr is not included in Neordr release archives.
 ## Build from source
 
 ```sh
-git clone git@github.com:derekstavis/neordr.git
+git clone https://github.com/derekstavis/neordr.git
 cd neordr
 git submodule update --init vendor/herdr
 cargo build --release --locked

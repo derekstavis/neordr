@@ -41,9 +41,8 @@ Neovim and that Neordr exposes compatible interfaces. Do not imply Neordr hosts
 agents, parses transcripts, provides a cloud relay, or replaces every Herdr
 feature. Product illustrations are explicitly labeled as illustrations.
 
-The repository currently remains private. The site links to authenticated source
-and release pages and discloses the access requirement. Publishing a landing
-page must not be presented as making its source or binaries publicly available.
+Keep the website's access and release claims aligned with the actual repository
+visibility and published artifacts.
 
 ## Preview and deployment
 

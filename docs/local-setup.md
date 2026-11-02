@@ -47,13 +47,12 @@ socket. It is not a separately listed session.
 
 ## Plugin diagnostics
 
-With the development plugin, run `:checkhealth neordr` to check the supported
+Run `:checkhealth neordr` to check the supported
 Neovim version, executable and version, setup state, bridge job, router, and
 session readiness. Checks do not restart running services or alter terminal
 jobs. Run `:NeordrStatus` for a compact view of the current session, socket,
 executable, bridge process state, and last error; it does not probe connections.
-Use `:help neordr` for the complete Lua API. These additions are newer than
-`v0.1.0`.
+Use `:help neordr` for the complete Lua API.
 
 `require('neordr').setup(opts)` returns `true` when initialization succeeds, or
 `false, error_message` when it fails. Startup failure is reported without

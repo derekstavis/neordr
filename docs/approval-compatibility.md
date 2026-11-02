@@ -1,5 +1,10 @@
 # Local approval and question compatibility
 
+The [October 16 completion investigation](audits/2026-10-16-codex-approval-completion.md)
+adds 0.4.30 event-stream and transcript lifecycle coverage, documents the live
+answered-question card issue, and provides a strict reproducer for a separate
+concurrent-answer race. The historical 0.3.26 results below remain version-scoped.
+
 Verified 2026-09-22 against the installed `moshi-hook 0.3.26` executable
 (SHA-256 `cf017621ef100f32e914ca1fdaaca22fe45db19b500600995aa0ee07429c0f7d`).
 

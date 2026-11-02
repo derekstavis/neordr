@@ -45,6 +45,7 @@ python3 tests/remote_ui_smoke.py
 python3 tests/default_attach_smoke.py
 python3 tests/gestures_smoke.py
 python3 tests/router_lifecycle_smoke.py
+python3 tests/service_smoke.py
 NEORDR_SKIP_MOSHI=1 python3 tests/split_smoke.py
 ```
 
@@ -172,6 +173,15 @@ The control-mode fixture exercises Moshi's real WebSocket transport through
 Neordr's JSON-lines CLI, alongside the existing ordinary PTY path. See
 [approval compatibility](approval-compatibility.md) for known upstream limits.
 
+`tests/moshi_approval_lifecycle_smoke.py` additionally follows permission
+completion through the Chat agent-status websocket, checks two Codex panes and
+two subscribers, delayed repaint, duplicate/stale answers, and reconnect. It
+checks plan dismissal and current Codex asynchronous-question answer records
+through transcript append/backlog streaming. It does not test card rendering.
+`NEORDR_APPROVAL_CONCURRENCY=3` enables a strict simultaneous-answer diagnostic;
+it currently fails on a confirmed Moshi 0.4.30 duplicate-delivery race and is not
+part of the default gate. See the [completion audit](audits/2026-10-16-codex-approval-completion.md).
+
 For an isolated browser fixture:
 
 ```sh
@@ -215,8 +225,12 @@ Do not claim these modes pass for a new adapter until that adapter is exercised.
 
 ## Releases and website
 
-Regular pull-request and `main` CI runs on Linux x86-64. Release builds run
-tests on Linux and macOS, each on x86-64 and AArch64 native runners.
+Regular pull-request and `main` CI runs the full `scripts/check.sh` suite on
+Linux x86-64 and macOS ARM64. Release builds run tests on Linux and macOS,
+each on x86-64 and AArch64 native runners. The launchd service smoke test skips
+when a macOS runner has no GUI session. Linux CI separately exercises the systemd
+user-service lifecycle in a dedicated disposable account. The optional
+installed-Moshi suite is not covered by this generic CI gate.
 
 Release artifacts are named
 `neordr-vVERSION-TARGET.tar.gz` and accompanied by `SHA256SUMS`. The four targets

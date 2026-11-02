@@ -22,8 +22,7 @@ The full editor stays visible. Selecting a terminal focuses its Neovim buffer
 in input mode, so you can move between editing files, running commands, and
 chatting with an agent without maintaining a second workspace layout.
 
-**Private preview.** Repository access is required for source and release
-downloads. Interfaces are still evolving; see the compatibility limits below.
+Interfaces are still evolving; see the compatibility limits below.
 
 ## What it does
 
@@ -51,14 +50,12 @@ Install the Lua plugin through your plugin manager. For Neovim's `vim.pack`:
 
 ```lua
 vim.pack.add({
-  { src = 'git@github.com:derekstavis/neordr.git', version = 'main' },
+  { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.2.0' },
 })
 require('neordr').setup()
 ```
 
-The executable must already be on `PATH`. This example follows the development
-branch; the new health checks and help documentation are not in `v0.1.0`.
-For a released installation, pin the plugin and binary to the same release.
+The executable must already be on `PATH`. Pin the plugin and binary to the same release.
 See [plugin installation](docs/installation.md#install-the-neovim-plugin) for
 `lazy.nvim`, release pins, and archive-only installation. No Rust build is needed
 when installing the plugin alongside a downloaded binary.
@@ -134,7 +131,7 @@ connection detaches only that remote UI.
 
 | Area | Current behavior |
 | --- | --- |
-| Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Hook compatibility tested through 0.4.9, including its control-mode transport. |
+| Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Synthetic compatibility tests passed with hook 0.4.43, including its control-mode transport. |
 | Herdr interactive UI | The default session groups editor workspaces; full editor rendering, terminal selection, creation, input, resizing, and detach. [Compatibility details](docs/herdr-interface.md). |
 | Multiple clients | All clients share Neovim's focus and layout. The smallest attached UI constrains the editor size. |
 | Agent status | Foreground Claude/Codex detection; activity status remains `unknown`. |
@@ -146,13 +143,19 @@ Session and pane identities include the owning editor's generation. Stale
 targets fail instead of silently selecting another terminal. The default Moshi
 router also rejects Chat View input after a supported agent exits.
 
+With moshi-hook 0.4.43, simultaneous submissions of the same approval can
+deliver the answer more than once. Avoid answering the same approval from
+multiple clients at once. A previously observed Moshi question card could also
+remain on “Submitting” after Codex received the answer; see the
+[approval investigation](docs/audits/2026-10-16-codex-approval-completion.md).
+
 See [operating notes](docs/local-setup.md) for shortcuts, socket ownership,
 terminal adapters, remote-client lifetime, and known client limitations.
 
 ## Build and contribute
 
 ```sh
-git clone git@github.com:derekstavis/neordr.git
+git clone https://github.com/derekstavis/neordr.git
 cd neordr
 git submodule update --init vendor/herdr
 cargo build --release --locked

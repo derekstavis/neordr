@@ -5,8 +5,11 @@ Tests local terminal delivery, not model execution, upload storage, cloud approv
 push or native-client UI. The approval_smoke suite covers plan/approval lifecycles.
 """
 import tempfile
+import re
+import subprocess
 from pathlib import Path
 from approval_smoke import Rig
+from moshi_smoke import HOOK
 
 
 def composer(rig, source):
@@ -15,13 +18,26 @@ def composer(rig, source):
     rig.answer(source,'/v1/prompt',{'text':text},b'\x1b[200~'+text.encode()+b'\x1b[201~\r')
     # Moshi submits long pasted blocks separately from typed composer text.
     blocks=['First block\nλ', 'Second block\n'+'z'*1500]
+    version = re.search(r'\b(\d+)\.(\d+)\.(\d+)\b', subprocess.check_output([HOOK, 'version'], text=True))
+    assert version, 'Cannot determine the Moshi paste contract version'
+    current_paste = tuple(map(int, version.groups())) >= (0, 4, 30)
+    if current_paste:
+        # The observed 0.4.30 contract separates later blocks and trailing text,
+        # keeping those newlines inside bracketed paste instead of submitting them.
+        parts = [blocks[0], '\n\n' + blocks[1], '\n\nExplain these blocks']
+        expected = b''.join(b'\x1b[200~' + part.encode() + b'\x1b[201~' for part in parts) + b'\r'
+    else:
+        expected = b''.join(b'\x1b[200~'+b.encode()+b'\x1b[201~' for b in blocks)+b'Explain these blocks\r'
     rig.answer(source,'/v1/prompt',{'text':'Explain these blocks','pastedText':blocks},
-               b''.join(b'\x1b[200~'+b.encode()+b'\x1b[201~' for b in blocks)+b'Explain these blocks\r')
+               expected)
     # Uploaded files are represented by paths in composer text. Neordr must
     # deliver this literally, without expanding shell syntax or splitting spaces.
     attachment=rig.root/'attachment with spaces λ.txt';attachment.write_text('synthetic attachment')
     prompt=f'Inspect "{attachment}" and explain $(not-a-shell-command).'
-    rig.answer(source,'/v1/prompt',{'text':prompt},prompt.encode()+b'\r')
+    expected = prompt.encode()
+    if source == 'codex' and current_paste:
+        expected = b'\x1b[200~' + expected + b'\x1b[201~'
+    rig.answer(source,'/v1/prompt',{'text':prompt},expected+b'\r')
     rig.answer(source,'/v1/keys',{'keys':['BTab','PageDn']},b'\x1b[Z\x1b[6~')
     rig.answer(source,'/v1/keys',{'keys':['Escape']},b'\x1b')
     rig.answer(source,'/v1/keys',{'keys':['not-a-real-key']},b'',status=400)
