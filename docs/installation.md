@@ -3,6 +3,11 @@
 Neordr consists of a Rust executable and a Neovim plugin in the same repository.
 Install the binary and choose one plugin installation method below. Moshi and Herdr are optional clients, installed separately.
 
+**Release status:** v0.1.0 is the latest published release. This guide also
+describes upcoming v0.2.0 functionality on `main`, including health checks,
+help, and router service management. To use those features before the release,
+[build from source](#build-from-source) and install the matching `main` plugin.
+
 ## Requirements
 
 - Linux or macOS, on x86-64 or AArch64 / Apple Silicon.
@@ -33,7 +38,7 @@ The example below selects Apple Silicon. Set `version` and `target` for your
 release and machine, then run in a temporary directory:
 
 ```sh
-version=v0.2.0
+version=v0.1.0
 target=aarch64-apple-darwin
 archive="neordr-${version}-${target}.tar.gz"
 
@@ -88,9 +93,10 @@ It needs neither Cargo nor initialized Git submodules. The executable is
 installed separately by the previous step; there is no build hook or automatic
 binary download.
 
-The examples below pin the plugin to v0.2.0. Use the same tag for the plugin
-and binary. Development versions may change, so update the binary when the
-plugin's compatibility check requests it.
+The examples below pin the plugin to the currently published v0.1.0. Use the
+same tag for the plugin and binary. For a source build, use `main` for both.
+Development versions may change, so update the binary when the plugin's
+compatibility check requests it.
 
 ### vim.pack
 
@@ -98,7 +104,7 @@ Add this to `init.lua` before configuring plugins that start terminal jobs:
 
 ```lua
 vim.pack.add({
-  { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.2.0' },
+  { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.1.0' },
 })
 require('neordr').setup()
 ```
@@ -113,7 +119,7 @@ Add this plugin specification to your existing `lazy.nvim` configuration:
 ```lua
 {
   url = 'https://github.com/derekstavis/neordr.git',
-  tag = 'v0.2.0',
+  tag = 'v0.1.0',
   submodules = false,
   lazy = false,
   main = 'neordr',
@@ -154,26 +160,33 @@ different environment from your shell, set `bin` to its absolute path in
 `setup` (or in `opts` for `lazy.nvim`).
 
 The setup starts a bridge for this editor and ensures the shared router is
-running. Internal bridge names are generated from the initial directory and editor
-identity. Editors appear as workspaces in the default session.
+running. With v0.1.0, session names are generated from the initial directory
+and editor identity. In the upcoming v0.2.0, editors appear as workspaces in
+the default session.
 
-Restart Neovim and run `:checkhealth neordr`. Health checks inspect readiness
-without restarting your editor or terminal jobs. See `:help neordr` for options.
+With a source build of the upcoming v0.2.0, restart Neovim and run
+`:checkhealth neordr`. Health checks inspect readiness without restarting your
+editor or terminal jobs. See `:help neordr` for options. These commands are not
+available in the v0.1.0 plugin.
 
 Run `:NeordrTerm` to open a managed shell in a split, then `:NeordrStatus`
 to see its session name. In another terminal:
 
 ```sh
 neordr session list --json
-neordr --session default rpc pane.list
-neordr session attach default
+neordr --session SESSION_NAME rpc pane.list
+neordr session attach SESSION_NAME
 ```
 
-`default` is the session returned by `session list`. Attachments share your
+Use a name returned by `session list` (`default` on the upcoming v0.2.0).
+Attachments share your
 editor's state. Detach with Ctrl-B, q or `:detach`; quitting Neovim stops its
 terminal jobs.
 
 ## Run the router as a service
+
+This feature is available on `main` and is planned for v0.2.0; it is not in
+the v0.1.0 release.
 
 The shared router starts on demand, but a router started from an ssh login or
 another service passes that launch context to every workspace it creates. On
@@ -250,7 +263,7 @@ before integration was enabled do not acquire its environment retroactively.
 Keep an actual Herdr executable at a separate path from the Moshi alias:
 
 ```sh
-/path/to/herdr --session default
+/path/to/herdr --session SESSION_NAME
 ```
 
 Herdr supplies its sidebar and terminal interface around Neovim's full editor.

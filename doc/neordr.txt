@@ -3,7 +3,8 @@
 Neordr groups Neovim editor workspaces in one Herdr-compatible default session. Neovim owns the
 editor layout and terminal jobs; remote clients attach to the full editor.
 
-Plugin and executable releases share version tags.
+Plugin and executable releases share version tags. This help describes the
+upcoming v0.2.0 on main; the published v0.1.0 plugin does not include it.
 
 CONTENTS                                                       *neordr*
 
@@ -28,21 +29,22 @@ or initialized Git submodules.
 
 vim.pack (in init.lua) >lua
     vim.pack.add({
-      { src = 'https://github.com/derekstavis/neordr.git', version = 'v0.2.0' },
+      { src = 'https://github.com/derekstavis/neordr.git', version = 'main' },
     })
     require('neordr').setup()
 <
 lazy.nvim (add to your existing plugin specifications) >lua
     {
       url = 'https://github.com/derekstavis/neordr.git',
-      tag = 'v0.2.0',
+      branch = 'main',
       submodules = false,
       lazy = false,
       main = 'neordr',
       opts = {},
     }
 <
-Pin both plugin and executable to the same release.
+Build the executable from the same source revision. Once v0.2.0 is released,
+pin both plugin and executable to the same release.
 
 Initialize during startup, before terminal jobs are launched. If a terminal
 plugin starts jobs during its setup, make Neordr a dependency of that plugin.
