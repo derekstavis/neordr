@@ -74,8 +74,11 @@ shell command. In another terminal:
 
 ```sh
 neordr session list
-neordr session attach default
+neordr session attach SESSION_NAME
 ```
+
+Use a name from `session list`; source builds of the upcoming v0.2.0 group
+workspaces under `default`.
 
 Detach with **Ctrl-B, q** or Neovim's `:detach`; the editor and jobs continue
 running. `:NeordrStatus` shows the session name and Neovim socket.
@@ -133,6 +136,9 @@ still share the editor's layout, focus and size constraints. Closing a control
 connection detaches only that remote UI.
 
 ## Compatibility and limits
+
+The behavior below describes the upcoming v0.2.0 on `main`. The v0.1.0 release
+has an earlier, narrower implementation.
 
 | Area | Current behavior |
 | --- | --- |

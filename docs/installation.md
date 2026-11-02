@@ -160,8 +160,9 @@ different environment from your shell, set `bin` to its absolute path in
 `setup` (or in `opts` for `lazy.nvim`).
 
 The setup starts a bridge for this editor and ensures the shared router is
-running. Internal bridge names are generated from the initial directory and editor
-identity. Editors appear as workspaces in the default session.
+running. With v0.1.0, session names are generated from the initial directory
+and editor identity. In the upcoming v0.2.0, editors appear as workspaces in
+the default session.
 
 With a source build of the upcoming v0.2.0, restart Neovim and run
 `:checkhealth neordr`. Health checks inspect readiness without restarting your
@@ -173,11 +174,12 @@ to see its session name. In another terminal:
 
 ```sh
 neordr session list --json
-neordr --session default rpc pane.list
-neordr session attach default
+neordr --session SESSION_NAME rpc pane.list
+neordr session attach SESSION_NAME
 ```
 
-`default` is the session returned by `session list`. Attachments share your
+Use a name returned by `session list` (`default` on the upcoming v0.2.0).
+Attachments share your
 editor's state. Detach with Ctrl-B, q or `:detach`; quitting Neovim stops its
 terminal jobs.
 
@@ -261,7 +263,7 @@ before integration was enabled do not acquire its environment retroactively.
 Keep an actual Herdr executable at a separate path from the Moshi alias:
 
 ```sh
-/path/to/herdr --session default
+/path/to/herdr --session SESSION_NAME
 ```
 
 Herdr supplies its sidebar and terminal interface around Neovim's full editor.
