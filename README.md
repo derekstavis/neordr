@@ -112,6 +112,11 @@ See [contract generation](build_support/README.md) and the
 
 ## Diagnostics and Moshi control mode
 
+Run `neordr restart` to replace the shared router and reachable editor bridges
+without stopping Neovim, modified buffers, or terminal jobs. Remote clients may
+need to reconnect. This restarts Neordr processes; it does not reload Lua already
+in a running editor. See [operating notes](docs/local-setup.md#restarting-neordr).
+
 Run `neordr doctor` (or `neordr doctor --json`) to compare registered editors,
 attached UI sizes, bridge/router health, Moshi discovery and saved hook records.
 Use `--session NAME doctor` to inspect one editor or `doctor --gateway-port PORT`

@@ -224,8 +224,20 @@ An editor at a modal “Press ENTER” prompt stays discoverable. Lists retain i
 last normal snapshot without dismissing the prompt. Focus and other mutations
 wait for normal Neovim input processing; input can still dismiss the prompt.
 
-After upgrading the binary or Lua integration, restart each editor when its
-files are saved and terminal jobs can be stopped, then reconnect remote views.
-Replacing the executable or repeating `setup()` does not replace a running
-bridge. Health checks also report an older shared router, which survives editor
-restarts; they do not replace it automatically.
+### Restarting Neordr
+
+Run `neordr restart` to replace the shared router and each reachable editor
+bridge while leaving Neovim, modified buffers, and terminal jobs running. The
+command reports each bridge it restarts and any recovery failures. Remote clients
+may need to reconnect. For a router managed by launchd or systemd, the service
+manager restarts it using the executable path recorded in its service definition.
+The command checks that replacement processes run the executable you invoked;
+if a service or editor is configured for a different binary, it reports the
+mismatch. Reinstall the service with the intended executable before retrying.
+
+The command replaces processes; it does not reload Lua modules already loaded in
+Neovim or change an editor's configured binary path. Keep the executable and
+loaded plugin compatible. A plugin update that requires reloading its Lua or
+changing setup options still needs a separately planned editor reload or restart.
+An unreachable bridge is not included in the restart; use `neordr doctor` and
+`:checkhealth neordr` to investigate it.

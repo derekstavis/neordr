@@ -30,7 +30,7 @@ def main():
 
     def neordr(*args):
         result = subprocess.run([str(BIN), *args], env=env, capture_output=True,
-                                text=True, timeout=30)
+                                text=True, timeout=60)
         if result.returncode:
             raise AssertionError(f'neordr {args}: {result.stdout}\n{result.stderr}')
         return result.stdout
@@ -79,8 +79,16 @@ def main():
             assert len(matches) == 1, matches
             workspace = int(matches[0])
             neordr('service', 'restart')
-            assert rpc(router, 'ping')['pid'] != before
+            service_restart = rpc(router, 'ping')['pid']
+            assert service_restart != before
             assert alive(workspace), 'restart killed the workspace'
+            session = created['root_pane']['pane_id'].split(':', 1)[0]
+            bridge = config / 'herdr/sessions' / session / 'herdr.sock'
+            previous_bridge = rpc(bridge, 'ping')['pid']
+            neordr('restart')
+            assert rpc(router, 'ping')['pid'] != service_restart
+            assert rpc(bridge, 'ping')['pid'] != previous_bridge
+            assert alive(workspace), 'coordinated restart killed the workspace'
             neordr('service', 'uninstall')
             assert not unit.exists()
             assert alive(workspace), 'uninstall killed the workspace'

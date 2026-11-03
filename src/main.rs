@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use neordr::{attach, nvim, protocol, router, selection, server, service, session};
+use neordr::{attach, nvim, protocol, restart, router, selection, server, service, session};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -23,6 +23,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Restart the router and editor bridges while keeping Neovim and jobs running.
+    Restart,
     /// Diagnose bridges, attached UIs and Moshi conversation discovery (read-only).
     Doctor {
         #[arg(long)]
@@ -209,6 +211,7 @@ fn run() -> Result<i32> {
     }
     let config = session::config_root()?;
     match cli.command {
+        Some(Commands::Restart) => restart::run(&config)?,
         Some(Commands::Doctor { json, gateway_port }) => {
             let report = neordr::doctor::inspect(&config, gateway_port, cli.session.as_deref())?;
             if json {

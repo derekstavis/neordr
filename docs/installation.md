@@ -185,9 +185,13 @@ own login instead.
 ```sh
 neordr service install     # launchd agent (macOS) or systemd user unit (Linux)
 neordr service status
-neordr service restart     # replaces the router; workspaces keep running
+neordr service restart     # replaces only the service router; workspaces keep running
 neordr service uninstall   # workspaces keep running
 ```
+
+To replace both the router and reachable editor bridges without stopping
+Neovim or terminal jobs, run `neordr restart`. Remote clients may need to
+reconnect. Running Lua modules are not reloaded by this command.
 
 Installing is safe while Neovim workspaces and a router are running. It does not
 stop the running router: the service's router waits behind it and takes over the

@@ -18,6 +18,7 @@ pub mod ordering;
 mod parallel;
 pub mod process;
 pub mod protocol;
+pub mod restart;
 pub mod router;
 pub mod selection;
 pub mod server;
