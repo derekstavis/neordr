@@ -8,7 +8,7 @@ When three clients submit the same pending Codex approval concurrently, the loca
 Moshi gateway accepts all three requests and sends the answer to the terminal
 three times. Sequential duplicate requests are rejected by the normal lifecycle
 fixture. The concurrency issue was observed with moshi-hook 0.4.30 and again
-with **0.4.43 on macOS on October 30, 2026**.
+with **0.4.43 on October 30 and 0.4.47 on November 3, 2026**, on macOS.
 
 ## Reproduction
 
@@ -28,7 +28,7 @@ is involved.
 **Expected:** one successful submission, two rejected duplicates, and one `y`
 in the target terminal.
 
-**Observed on 0.4.43:** all three requests returned HTTP 200 and the target
+**Observed on 0.4.47:** all three requests returned HTTP 200 and the target
 received `yyy`. The strict fixture failed on that result.
 
 Neordr receives ordinary Herdr `pane.send_keys` requests without the approval

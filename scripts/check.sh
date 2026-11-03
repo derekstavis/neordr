@@ -14,6 +14,7 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets -- --test-threads=2
 cargo build --locked --bin neordr --example herdr_contract_fixture
 export NEORDR_BIN="$PWD/target/debug/neordr"
+python3 -m unittest discover -s tests -p browser_proxy_test.py
 for test in activity plugin remote_ui control doctor attach_lifecycle attach_prompt default_attach gestures router_lifecycle service workspaces; do
     python3 "tests/${test}_smoke.py"
 done

@@ -16,8 +16,8 @@ IDs include the internal bridge prefix, Neovim generation, and terminal lifetime
 The router checks for a supported foreground agent before session-less input.
 
 The design notes below explain the architecture and original milestones. See the
-README for the precise supported subset and remaining limits: unknown agent
-status, approximate recent unwrapped capture,
+README for the precise supported subset and remaining limits: observational
+agent status, approximate recent unwrapped capture,
 and untested phone/cloud approval flows.
 
 Local question/plan/permission answer delivery is now exercised through the real

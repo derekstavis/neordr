@@ -182,7 +182,26 @@ through transcript append/backlog streaming. It does not test card rendering.
 it currently fails on a confirmed Moshi 0.4.30 duplicate-delivery race and is not
 part of the default gate. See the [completion audit](audits/2026-10-16-codex-approval-completion.md).
 
-For an isolated browser fixture:
+To exercise the bundled Moshi web UI with synthetic agents, use Node 22+, a
+Chromium-based browser, and the installed `moshi-hook`:
+
+```sh
+NEORDR_TEST_WEB=1 bash scripts/check-moshi.sh
+# Or, after building Neordr:
+python3 tests/moshi_web_smoke.py
+```
+
+Set `CHROME_BIN` if Chrome or Chromium is not on `PATH` or in the standard macOS
+Applications location. The browser test checks chat selection, input isolation,
+live transcript append and reload, terminal input, and a synthetic Codex
+approval's delivery and visible completion. It uses a fresh headless browser
+profile, a disposable gateway and Neovim, and a restricted loopback proxy;
+port discovery, automatic updates and the simulator helper are disabled. The
+test blocks the test page's requests outside that proxy. It does not exercise real
+agents, phone pairing, E2EE, or concurrent approval submissions. Its selectors
+depend on the installed Moshi web UI and may need updates for new releases.
+
+For an isolated manual browser fixture:
 
 ```sh
 NEORDR_BROWSER_READY_FILE=/tmp/neordr-browser.json python3 tests/moshi_smoke.py

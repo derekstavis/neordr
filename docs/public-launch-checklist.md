@@ -19,14 +19,16 @@ evidence or decision in the linked issue, release notes, or this document.
   and get the complete `scripts/check.sh` gate passing. The local macOS gate
   passed on October 30 after the control fix and a PTY fixture hang fix.
 - [ ] Run the Moshi suite against the intended supported version and record the
-  result. The synthetic suite passed locally with hook 0.4.43 on October 30.
+  result. The synthetic suite passed locally with hook 0.4.47 on November 3;
+  confirm the version intended for release and exercise real clients.
 - [ ] Verify real Claude and Codex question, approval, and reconnect flows in
   the clients we intend to recommend, including phone/cloud if claimed.
   Recheck the stuck “Submitting” card and concurrent-answer race described in
   the [approval audit](audits/2026-10-16-codex-approval-completion.md); document
   any unresolved upstream behavior and decide whether it blocks launch.
   On October 30, the strict concurrent diagnostic reproduced the race with
-  moshi-hook 0.4.43: three HTTP 200 responses and `yyy` delivered for one action.
+  moshi-hook 0.4.43, and again with 0.4.47 on November 3: three HTTP 200
+  responses and `yyy` delivered for one action.
   Release decision: proceed with a prominent warning and advise users not to
   answer the same approval from multiple clients at once. The client card and
   phone/cloud paths remain unverified.
