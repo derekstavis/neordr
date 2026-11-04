@@ -131,10 +131,10 @@ connection detaches only that remote UI.
 
 | Area | Current behavior |
 | --- | --- |
-| Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Synthetic compatibility tests passed with hook 0.4.43, including its control-mode transport. |
+| Moshi | Discovery, Term view, Claude/Codex Chat View, terminal management, and local approval flows. Synthetic compatibility tests passed with hook 0.4.47, including its control-mode transport. |
 | Herdr interactive UI | The default session groups editor workspaces; full editor rendering, terminal selection, creation, input, resizing, and detach. [Compatibility details](docs/herdr-interface.md). |
 | Multiple clients | All clients share Neovim's focus and layout. The smallest attached UI constrains the editor size. |
-| Agent status | Foreground Claude/Codex detection; activity status remains `unknown`. |
+| Agent status | Foreground Claude/Codex detection with activity inferred from observed terminal screens and titles; unrecognized states remain `unknown` or retain the last known state. |
 | Capture | Visible and bounded recent terminal text. Exact soft-wrap reconstruction and ANSI capture are unavailable. |
 | Herdr features | Supported operations are a subset. Herdr multi-pane tab groups, plugins, and direct binary terminal control/observation are not implemented; Moshi uses the supported JSON-lines CLI adapter. |
 | Platforms | macOS and Linux targets; no Windows support. Published build and test results are recorded in CI. |
@@ -143,7 +143,7 @@ Session and pane identities include the owning editor's generation. Stale
 targets fail instead of silently selecting another terminal. The default Moshi
 router also rejects Chat View input after a supported agent exits.
 
-With moshi-hook 0.4.43, simultaneous submissions of the same approval can
+With moshi-hook 0.4.47, simultaneous submissions of the same approval can
 deliver the answer more than once. Avoid answering the same approval from
 multiple clients at once. A previously observed Moshi question card could also
 remain on “Submitting” after Codex received the answer; see the

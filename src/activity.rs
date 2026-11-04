@@ -205,6 +205,25 @@ mod tests {
         );
     }
     #[test]
+    fn current_codex_update_and_named_claude_question_are_blocked() {
+        assert_eq!(
+            detect(
+                "codex",
+                "Update available · 0.159.0\nUpdate now\nenter continue · esc skip",
+                ""
+            ),
+            Some("blocked")
+        );
+        assert_eq!(
+            detect(
+                "claude",
+                "Choose an option\nEnter to select · arrow keys to navigate · Esc to cancel\n──── named session",
+                ""
+            ),
+            Some("blocked")
+        );
+    }
+    #[test]
     fn history_and_unmatched_text_do_not_complete_a_turn() {
         assert_eq!(detect("claude", "Ordinary response text", ""), None);
         assert_eq!(detect("shell", "Working", ""), None);

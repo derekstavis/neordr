@@ -208,18 +208,26 @@ def main():
         root = Path(directory).resolve()
         (root / "bin").mkdir()
         (root / "bin/herdr").symlink_to(BIN)
+        hook = HOOK
+        # Keep the fixture daemon from discovering or controlling real simulators.
+        mata_stub = root / 'bin/mata'
+        mata_stub.write_text('#!/bin/sh\nexit 1\n')
+        mata_stub.chmod(0o755)
         env = {**os.environ, "HOME": str(root), "XDG_CONFIG_HOME": str(root / "config"),
+               "XDG_STATE_HOME": str(root / "nvim-state"),
                "MOSHI_STATE_DIR": str(root / "state"), "MOSHI_SOCKET_PATH": str(root / "moshi.sock"),
                "MOSHI_CONFIG_DIR": str(root / "state"), "CLAUDE_CONFIG_DIR": str(root / '.claude'),
                "MOSHI_API_BASE": "http://127.0.0.1:9", "CODEX_HOME": str(root / "codex"),
-               "MOSHI_HERDR_PATH": str(root / "bin/herdr"), "TMPDIR": str(root),
+               "MOSHI_HERDR_PATH": str(root / "bin/herdr"), "MOSHI_MATA_BIN": str(mata_stub), "TMPDIR": str(root),
                "NVIM_LOG_FILE": str(root / "nvim.log"),
                "NEORDR_TRACE": "1",
                "PATH": str(root / "bin") + os.pathsep + os.environ["PATH"]}
         for key in ["TMUX", "TMUX_PANE", "ZELLIJ", "HERDR_ENV", "HERDR_SESSION", "HERDR_PANE_ID", "HERDR_CONFIG_PATH", "NVIM"]:
             env.pop(key, None)
-        for setting in ['always-on-discovery', 'usage-collection']:
-            subprocess.run([HOOK, 'set', setting, 'off'], env=env, check=True, capture_output=True, timeout=10)
+        for setting, value in [('always-on-discovery', 'off'), ('usage-collection', 'off'),
+                               ('auto-update', 'off'), ('scan-ports', 'none'),
+                               ('inline-visuals', 'off')]:
+            subprocess.run([hook, 'set', setting, value], env=env, check=True, capture_output=True, timeout=10)
         address = root / "nvim.sock"
         endpoint = root / "config/herdr/sessions/smoke/herdr.sock"
         with socket.socket() as reserve:
@@ -228,7 +236,7 @@ def main():
 
         def start(args, name):
             log = open(root / (name + ".log"), "w")
-            process = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+            process = subprocess.Popen(args, env=env, cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             processes.append((process, log))
             return process
 
@@ -239,7 +247,7 @@ def main():
             eventually(lambda: endpoint.exists() and rpc(endpoint, "ping"))
             start([str(BIN), 'router'], 'router')
             eventually(lambda: (root / 'config/herdr/herdr.sock').exists())
-            start([HOOK, "serve", "--gateway-listen", f"127.0.0.1:{port}"], "moshi")
+            start([hook, "serve", "--gateway-listen", f"127.0.0.1:{port}"], "moshi")
             eventually(lambda: http(port, "/v1/version")[0] == 200)
             pty_attachment(port, env, address, root)
             sessions = {}
@@ -261,12 +269,20 @@ def main():
                 event = {"hook_event_name": "SessionStart", "session_id": session,
                          "cwd": str(root), "transcript_path": str(path)}
                 child = root / 'bin' / source
-                child.write_text("import os,subprocess,json,tty\n"
+                child.write_text("import os,subprocess,json,tty,select\nfrom pathlib import Path\n"
                     + f"rollout=open({str(path)!r})\n"
-                    + f"subprocess.run([{HOOK!r},{(source+'-hook')!r}],input={json.dumps(event)!r},text=True,timeout=10)\n"
+                    + f"subprocess.run([{hook!r},{(source+'-hook')!r}],input={json.dumps(event)!r},text=True,timeout=10)\n"
                     + "tty.setraw(0)\nos.write(1,b'\\x1b[2J\\x1b[HREADY\\r\\n')\n"
                     + f"capture=open({str(root/(source+'.input'))!r},'ab',buffering=0)\n"
-                    + "while True:\n data=os.read(0,4096)\n if not data: break\n capture.write(data)\n os.write(1,b'INPUT '+data.hex().encode()+b'\\r\\n')\n")
+                    + f"control=Path({str(root/(source+'.control'))!r})\n"
+                    + f"ack=Path({str(root/(source+'.ack'))!r})\n"
+                    + "last=None\nwhile True:\n"
+                    + " if control.exists():\n  item=json.loads(control.read_text())\n"
+                    + "  if item['id']!=last:\n   last=item['id']\n"
+                    + "   os.write(1,('\\x1b]0;'+item.get('title','')+'\\x07\\x1b[2J\\x1b[H'+item['screen'].replace('\\n','\\r\\n')).encode())\n"
+                    + f"   result=subprocess.run([{hook!r},{(source+'-hook')!r}],input=json.dumps(item['event']),text=True,capture_output=True,timeout=10)\n"
+                    + "   if result.returncode: raise RuntimeError(result.stderr)\n   ack.write_text(last)\n"
+                    + " if select.select([0],[],[],.02)[0]:\n  data=os.read(0,4096)\n  if not data: break\n  capture.write(data)\n  os.write(1,b'INPUT '+data.hex().encode()+b'\\r\\n')\n")
                 code = "vim.cmd.enew(); local b=vim.api.nvim_get_current_buf(); " \
                        "local env=require('neordr.backend').prepare(b); " \
                        "vim.fn.jobstart({'python3'," + json.dumps(str(child)) + "},{term=true,env=env}); " \
@@ -280,7 +296,7 @@ def main():
             for source, (session, pane, marker, path) in sessions.items():
                 rpc(endpoint, 'agent.focus', {'target': pane})
                 context_env = {**env, "HERDR_ENV": "1", "HERDR_SESSION": "smoke", "HERDR_PANE_ID": pane}
-                context = json.loads(subprocess.check_output([HOOK, "context"], env=context_env, timeout=15))
+                context = json.loads(subprocess.check_output([hook, "context"], env=context_env, timeout=15))
                 print(source, "context:", json.dumps({"kind":context.get('kind'),"agent":context.get('agent',{}).get('name'),"session":context.get('agent',{}).get('session')}))
                 assert context["kind"] == "herdr", context
                 assert context['agent']['session'] == session, context
@@ -314,11 +330,14 @@ def main():
                 with socket.socket() as reserve:
                     reserve.bind(('127.0.0.1', 0))
                     web_port = reserve.getsockname()[1]
-                start([HOOK, '--no-open', '--listen', f'127.0.0.1:{web_port}'], 'web')
+                start([hook, '--no-open', '--listen', f'127.0.0.1:{web_port}'], 'web')
                 from browser_proxy import start_proxy
                 proxy = start_proxy(web_port, port)
                 ready = Path(ready_file)
-                ready.write_text(json.dumps({'url': f'http://127.0.0.1:{proxy.server_address[1]}', 'root': str(root)}))
+                ready.write_text(json.dumps({'url': f'http://127.0.0.1:{proxy.server_address[1]}', 'root': str(root),
+                                             'sessions': {name: {'session': values[0], 'pane': values[1], 'marker': values[2],
+                                                                 'transcript': str(values[3])}
+                                                          for name, values in sessions.items()}}))
                 deadline = time.monotonic() + 300
                 while ready.exists() and time.monotonic() < deadline:
                     time.sleep(0.2)

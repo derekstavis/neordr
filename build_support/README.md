@@ -2,7 +2,7 @@
 
 Neordr's contract definitions come from the unmodified
 [Herdr](https://github.com/herdrdev/herdr) Git submodule at
-`vendor/herdr`, pinned to `5da0a01e1eedda054db0c81dd3a780000c40d9f0`.
+`vendor/herdr`, pinned to Herdr v0.9.5 (`2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`).
 Herdr is licensed under Apache-2.0;
 retain [its license](../vendor/herdr/LICENSE) with distributions.
 

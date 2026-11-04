@@ -8,7 +8,7 @@ use quote::{ToTokens, quote};
 use std::{env, fs, path::Path, process::Command};
 use syn::{Item, visit_mut::VisitMut};
 
-const REVISION: &str = "5da0a01e1eedda054db0c81dd3a780000c40d9f0";
+const REVISION: &str = "2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01";
 const ROOT: &str = "vendor/herdr";
 
 fn source(path: &str) -> syn::File {

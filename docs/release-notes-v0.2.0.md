@@ -30,7 +30,7 @@ does not reconstruct exact soft wraps. See the [README](../README.md) and
 [approval compatibility](approval-compatibility.md) for details. The observed
 Moshi question-card and concurrent-answer issues in the
 [approval investigation](audits/2026-10-16-codex-approval-completion.md) require
-attention. **With moshi-hook 0.4.43, simultaneous answers to the same approval
+attention. **With moshi-hook 0.4.47, simultaneous answers to the same approval
 can be delivered more than once. Avoid answering the same approval from multiple
 clients at once.** The question-card behavior needs revalidation against the
 final clients.

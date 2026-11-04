@@ -13,3 +13,6 @@ export NEORDR_BIN="$PWD/target/debug/neordr"
 for test in moshi approval moshi_approval_lifecycle moshi_interactions moshi_create moshi_legacy_sessions; do
     python3 "tests/${test}_smoke.py"
 done
+if [[ ${NEORDR_TEST_WEB:-0} == 1 ]]; then
+    python3 tests/moshi_web_smoke.py
+fi

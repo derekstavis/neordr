@@ -1,13 +1,15 @@
 # Herdr interface compatibility
 
-Validated with unmodified macOS ARM64 Herdr clients:
+Validated with an unmodified macOS ARM64 Herdr client:
 
-- Stable `0.9.3`, SHA-256
+- Stable `0.9.5`, SHA-256
+  `fb77c2232a05a8035421382c894392f4174e4e38a18e48af3dd0290157c3a7e2`.
+- Previously validated with the October 3 contract pin: stable `0.9.3`, SHA-256
   `5173a3e0ae42d5d1ab7ebfa5d5e6329f7c3d23f8e1a3677c7ce3231da2884157`.
 - Previous `0.9.1-preview.2026-09-21-0ff0f27e2226`, SHA-256
   `203d7b29599a8bafaf94ba476912e7173cac2fb73d2988492ae9abe4e0fb44da`.
 - Contracts and optional scroll codec come from upstream revision
-  `5da0a01e1eedda054db0c81dd3a780000c40d9f0` (October 3, 2026).
+  `2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01` (Herdr v0.9.5).
   Upstream still specifies protocol **22**, endpoint generation **1**. Optional
   capabilities extend that protocol without changing its version number.
 
