@@ -32,7 +32,7 @@ def main():
         router = root / 'c/herdr/herdr.sock'
 
         def neordr(*args):
-            return subprocess.run([str(BIN), *args], env=env, capture_output=True, text=True, check=True).stdout
+            return subprocess.run([str(BIN), *args], env=env, capture_output=True, text=True, check=True, timeout=60).stdout
 
         def accepting(path):
             with socket.socket(socket.AF_UNIX) as client:
@@ -91,13 +91,20 @@ def main():
             after = rpc(router, 'ping')['pid']
             assert after != before, 'restart did not replace the router'
             assert pid_alive(workspace), 'restart killed a workspace'
+            session = created['root_pane']['pane_id'].split(':', 1)[0]
+            bridge = root / 'c/herdr/sessions' / session / 'herdr.sock'
+            previous_bridge = rpc(bridge, 'ping')['pid']
+            neordr('restart')
+            assert rpc(router, 'ping')['pid'] != after, 'coordinated restart did not replace service router'
+            assert rpc(bridge, 'ping')['pid'] != previous_bridge, 'coordinated restart did not replace bridge'
+            assert pid_alive(workspace), 'coordinated restart killed a workspace'
         finally:
             subprocess.run([str(BIN), 'service', 'uninstall'], env=env, capture_output=True)
             if workspace and pid_alive(workspace):
                 os.kill(workspace, 15)
             shutil.rmtree(root / 'c', ignore_errors=True)
         assert not plist.exists()
-    print('router service (launchd): install beside a running router, takeover, workspace environment, restart, uninstall: PASS')
+    print('router service (launchd): install, takeover, workspace environment, service and coordinated restart, uninstall: PASS')
 
 
 if __name__ == '__main__':

@@ -266,10 +266,11 @@ Unexpected small editor ~
 
 Upgrades ~
     Update the executable and Lua plugin together. Replacing an executable
-    does not update an already-running bridge, and repeating setup reuses it.
-    Restart the editor when files are saved and terminal jobs can be stopped,
-    then reconnect remote views. An older shared router can survive editor
-    restarts; health reports its version without replacing it automatically.
+    does not update already-running processes, and repeating setup reuses them.
+    Run `neordr restart` to replace the router and reachable editor bridges
+    without stopping Neovim or terminal jobs. Remote views may need to reconnect.
+    This does not reload Lua modules already loaded in the editor or change its
+    configured executable path; keep the executable and loaded plugin compatible.
 
 
 MOSHI DIAGNOSTICS AND CONTROL                               *neordr-moshi-control*
